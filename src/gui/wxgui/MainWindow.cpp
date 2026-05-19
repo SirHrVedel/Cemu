@@ -29,6 +29,8 @@
 #include "wxgui/CemuUpdateWindow.h"
 #include "wxgui/LoggingWindow.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/Account/Account.h"
+#include "wxgui/dialogs/PasswordPrompt/wxPasswordPromptDialog.h"
 #include "config/LaunchSettings.h"
 
 #include "Cafe/Filesystem/FST/FST.h"
@@ -495,6 +497,14 @@ bool MainWindow::InstallUpdate(const fs::path& metaFilePath)
 
 bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATED_BY initiatedBy)
 {
+	// Reset the per-launch session overrides so the GUI account selection /
+	// online setting wins again on a fresh launch. The IOSU LoadConsoleAccount
+	// handler may re-set the persistent-id override later if the system menu
+	// switches accounts; the password-prompt cancel path may set the
+	// force-offline override.
+	ActiveSettings::SetForceOfflineForCurrentLaunch(false);
+	ActiveSettings::SetSessionPersistentIdOverride(0);
+
 	TitleInfo launchTitle{ launchPath };
 	if (launchTitle.IsValid())
 	{
@@ -508,6 +518,68 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
 			return false;
 		}
+		// If the active account is an online account whose password isn't
+		// cached on disk, prompt the user for it before booting. The hashed
+		// result lives in the in-memory Account for the rest of this session,
+		// and optionally gets written back to account.dat when the user ticks
+		// "Save password". Skip when online mode is disabled or there's no
+		// principal id (offline-only account).
+		//
+		// Each typed password is verified against the stored AccountPasswordHash
+		// (double makePWHash, principal-id-keyed) before we accept it. Mismatches
+		// re-prompt; Cancel aborts the launch. Accounts without a stored hash
+		// (brand-new online accounts) pass verification trivially.
+		if (ActiveSettings::IsOnlineEnabled())
+		{
+			const Account& activeAccount = Account::GetCurrentAccount();
+			// Prompt only when we don't already have a usable password. The
+			// on-disk IsPasswordCacheEnabled stays the authoritative answer
+			// for nn::act callers (the system menu reads it to decide whether
+			// to show its own password screen) - here we additionally accept
+			// a session-only password supplied earlier this Cemu run, so the
+			// user isn't asked again every title launch within a session.
+			if (activeAccount.GetPrincipalId() != 0 && !activeAccount.HasUsablePasswordForLaunch())
+			{
+				const wxString miiName{ std::wstring(activeAccount.GetMiiName()) };
+				wxString serviceName;
+				switch (ActiveSettings::GetNetworkService())
+				{
+				case NetworkService::Nintendo: serviceName = _("Nintendo"); break;
+				case NetworkService::Pretendo: serviceName = _("Pretendo"); break;
+				case NetworkService::Custom:   serviceName = _("custom network service"); break;
+				default: break; // Offline or unknown - shown line is suppressed inside the dialog
+				}
+				bool showError = false;
+				while (true)
+				{
+					wxPasswordPromptDialog dlg(this, miiName, serviceName, showError);
+					const int result = dlg.ShowModal();
+					if (result == wxID_CANCEL)
+					{
+						return false; // user dismissed -> abort launch
+					}
+					if (result == wxPasswordPromptDialog::ID_LaunchOffline)
+					{
+						// User chose offline mode for this session. Settings on
+						// disk stay untouched; the override is cleared at the
+						// start of every FileLoad.
+						ActiveSettings::SetForceOfflineForCurrentLaunch(true);
+						break;
+					}
+					// result == wxID_OK
+					const std::string plaintext = dlg.GetPassword().utf8_string();
+					if (!activeAccount.VerifyPlaintextPassword(plaintext))
+					{
+						showError = true;
+						continue; // re-prompt with themed inline error label
+					}
+					Account::ApplyPasswordToAccount(activeAccount.GetPersistentId(),
+						plaintext, dlg.ShouldSavePassword());
+					break;
+				}
+			}
+		}
+
 		CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 		if (r == CafeSystem::PREPARE_STATUS_CODE::INVALID_RPX)
 		{

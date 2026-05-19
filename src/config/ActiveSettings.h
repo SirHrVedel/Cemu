@@ -107,6 +107,21 @@ public:
 	[[nodiscard]] static bool IsOnlineEnabled();
 	[[nodiscard]] static bool HasRequiredOnlineFiles();
 	[[nodiscard]] static NetworkService GetNetworkService();
+	// Session-only override: when set to true, IsOnlineEnabled() reports false
+	// for the rest of this title launch even if the account's configured
+	// network service is Nintendo/Pretendo/Custom. Used when the user cancels
+	// the launch-time password prompt and chooses to play offline. Reset to
+	// false at the start of every title launch.
+	static void SetForceOfflineForCurrentLaunch(bool state);
+	[[nodiscard]] static bool IsForceOfflineForCurrentLaunch();
+	// Session-only override of the active persistent id. When non-zero,
+	// GetPersistentId() returns this value instead of the launch / config
+	// setting. Set by the IOSU LoadConsoleAccount handler when the system
+	// menu switches to a different account so NAPI / Account::GetCurrentAccount
+	// follow the switch and online auth uses the right NNID. Reset to 0 at the
+	// start of every title launch.
+	static void SetSessionPersistentIdOverride(uint32 persistentId);
+	[[nodiscard]] static uint32 GetSessionPersistentIdOverride();
 	// dump options
 	[[nodiscard]] static bool DumpShadersEnabled();
 	[[nodiscard]] static bool DumpTexturesEnabled();
@@ -138,5 +153,12 @@ private:
 	inline static bool s_audio_aux_only = false;
 
 	inline static bool s_has_required_online_files = false;
+
+	// Session-only "play offline" override; see SetForceOfflineForCurrentLaunch.
+	inline static bool s_force_offline_session = false;
+
+	// Session-only "current account" override; see SetSessionPersistentIdOverride.
+	// 0 means "no override".
+	inline static uint32 s_session_persistent_id_override = 0;
 };
 

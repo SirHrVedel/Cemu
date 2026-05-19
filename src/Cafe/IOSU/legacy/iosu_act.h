@@ -76,6 +76,10 @@ struct iosuActCemuRequest_t
 	uint32 serverId;
 	char clientId[64];
 	uint32 expiresIn;
+	// input - LoadConsoleAccount
+	uint32 loadOption;       // ACTLoadOption (enum)
+	uint8  loadFlag;         // 4th arg, bool
+	char   loadPassword[17]; // 16 chars + NUL; empty when none provided
 	// output
 	uint32 returnCode;
 	union
@@ -119,6 +123,8 @@ struct iosuActCemuRequest_t
 #define IOSU_ARC_ACQUIREINDEPENDENTTOKEN 0x0B
 #define IOSU_ARC_ACQUIREPIDBYNNID		0x0C
 #define IOSU_ARC_TIMEZONEID				0x0D
+#define IOSU_ARC_LOAD_CONSOLE_ACCOUNT	0x0E
+#define IOSU_ARC_PASSWORDCACHEENABLED	0x0F
 
 uint32 iosuAct_getAccountIdOfCurrentAccount();
 

@@ -42,6 +42,8 @@ add_library(CemuWxGui STATIC
   debugger/SymbolWindow.h
   dialogs/CreateAccount/wxCreateAccountDialog.cpp
   dialogs/CreateAccount/wxCreateAccountDialog.h
+  dialogs/PasswordPrompt/wxPasswordPromptDialog.cpp
+  dialogs/PasswordPrompt/wxPasswordPromptDialog.h
   dialogs/SaveImport/SaveImportWindow.cpp
   dialogs/SaveImport/SaveImportWindow.h
   dialogs/SaveImport/SaveTransfer.cpp

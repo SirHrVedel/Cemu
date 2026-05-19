@@ -878,6 +878,16 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		content->Add(m_delete_account, 0, wxEXPAND | wxALL | wxALIGN_RIGHT, 5);
 		m_delete_account->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountDelete, this);
 
+		// Spacer in column 0 so the "Remove password cache" button aligns under
+		// the active account dropdown rather than under the "Active account" label.
+		content->Add(0, 0, 0, wxEXPAND, 0);
+
+		m_remove_password_cache = new wxButton(box, wxID_ANY, _("Remove password cache"));
+		m_remove_password_cache->SetToolTip(_("Clears the saved AccountPasswordCache for the selected account. You will be prompted for the password again next time you launch a title with this account."));
+		content->Add(m_remove_password_cache, 0, wxEXPAND | wxALL, 5);
+		m_remove_password_cache->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountRemovePasswordCache, this);
+		m_remove_password_cache->Enable(false); // gated by UpdateAccountInformation()
+
 		box_sizer->Add(content, 1, wxEXPAND, 5);
 
 		online_panel_sizer->Add(box_sizer, 0, wxEXPAND | wxALL, 5);
@@ -887,6 +897,7 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 			m_active_account->Enable(false);
 			m_create_account->Enable(false);
 			m_delete_account->Enable(false);
+			m_remove_password_cache->Enable(false);
 		}
 	}
 
@@ -1535,6 +1546,38 @@ void GeneralSettings2::OnAccountDelete(wxCommandEvent& event)
 
 }
 
+void GeneralSettings2::OnAccountRemovePasswordCache(wxCommandEvent& event)
+{
+	const auto selection = m_active_account->GetSelection();
+	if (selection == wxNOT_FOUND)
+		return;
+	auto* obj = dynamic_cast<wxAccountData*>(m_active_account->GetClientObject(selection));
+	wxASSERT(obj);
+	auto& account = obj->GetAccount();
+
+	// The button is gated by UpdateAccountInformation() to require an online
+	// account with the cache currently enabled, but re-check defensively in
+	// case something else flipped the state in between.
+	if (account.GetPrincipalId() == 0 || !account.IsPasswordCacheEnabled())
+		return;
+
+	const std::wstring format_str = _("Remove the saved password cache for {} ({:x})?\nYou will be prompted for the password again next time you launch a title with this account.").ToStdWstring();
+	const std::wstring msg = fmt::format(fmt::runtime(format_str),
+	                                     std::wstring{ account.GetMiiName() }, account.GetPersistentId());
+	if (wxMessageBox(msg, _("Confirmation"), wxYES_NO | wxCENTRE | wxICON_QUESTION, this) != wxYES)
+		return;
+
+	// Clears bytes + flag in the live s_account_list entry and rewrites
+	// account.dat. Then mirror the flag onto the wxChoice's local Account
+	// copy so UpdateAccountInformation()'s gating check sees the new state
+	// immediately (we don't bother syncing the byte buffer since nothing in
+	// the GUI reads it).
+	Account::ClearPasswordCacheForAccount(account.GetPersistentId(), /*persist*/ true);
+	account.SetPasswordCacheEnabled(false);
+
+	UpdateAccountInformation();
+}
+
 void GeneralSettings2::OnAccountSettingsChanged(wxPropertyGridEvent& event)
 {
 	wxPGProperty* property = event.GetProperty();
@@ -1692,6 +1735,18 @@ void GeneralSettings2::UpdateAccountInformation()
 	tmp.append(wxString::FromUTF8(boost::nowide::narrow(account.GetMiiName())));
 	tmp.append(")");
 	m_active_service->SetLabel(tmp);
+
+	// Gate the "Remove password cache" button: only meaningful when the
+	// selected account is a real online account and has the cache currently
+	// enabled+saved in account.dat. Disable while a title is running so we
+	// don't yank the cache out from under live nn::act state.
+	if (m_remove_password_cache)
+	{
+		const bool can_clear = account.GetPrincipalId() != 0 &&
+		                       account.IsPasswordCacheEnabled() &&
+		                       !CafeSystem::IsTitleRunning();
+		m_remove_password_cache->Enable(can_clear);
+	}
 
 	// refresh pane size
 	m_account_grid->InvalidateBestSize();

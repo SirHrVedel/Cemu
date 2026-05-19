@@ -39,6 +39,11 @@ struct OnlineValidator
 	}
 };
 
+// Hashes a plaintext NNID password into the 32-byte AccountPasswordCache form
+// stored in account.dat. Used by IOSU when LoadConsoleAccount supplies a
+// password for an account that has password caching disabled.
+void makePWHash(uint8* input, sint32 length, uint32 magic, uint8* output);
+
 class Account
 {
 public:
@@ -78,6 +83,15 @@ public:
 	[[nodiscard]] uint32 GetPrincipalId() const { return m_principal_id; }
 	[[nodiscard]] bool IsPasswordCacheEnabled() const { return m_password_cache_enabled != 0; }
 	[[nodiscard]] const std::array<uint8, 32>& GetAccountPasswordCache() const { return m_account_password_cache; }
+	// True when the in-memory password cache was filled by the launch-time
+	// prompt without "Save password" ticked. Survives only for this Cemu run.
+	[[nodiscard]] bool HasSessionPassword() const { return m_session_password_filled; }
+	// True when nn::act / NAPI have a usable password to send (either the
+	// on-disk cache or a session-supplied one). Used by FileLoad to decide
+	// whether to prompt. Distinct from IsPasswordCacheEnabled(), which must
+	// continue to report the on-disk truth so the system menu's user-select
+	// screen prompts correctly.
+	[[nodiscard]] bool HasUsablePasswordForLaunch() const { return m_password_cache_enabled != 0 || m_session_password_filled; }
 
 	[[nodiscard]] std::string_view GetStorageValue(std::string_view key) const;
 
@@ -90,6 +104,32 @@ public:
 	void SetCountry(uint32 country) { m_country = country; }
 	void SetTimeZoneId(std::string_view timezone_id) { m_timezone_id = timezone_id; }
 	void SetUtcOffset(sint64 utc_offset) { m_utc_offset = utc_offset; }
+
+	// Stores `plaintext` into m_account_password_cache after hashing it with
+	// the principal-id-keyed makePWHash. Sets IsPasswordCacheEnabled=1 so the
+	// rest of Cemu treats the slot as having a cached password. If `persist`
+	// is true the account.dat is rewritten too; otherwise the change is
+	// in-memory only for this Cemu session.
+	void SetPasswordFromPlaintext(std::string_view plaintext, bool persist);
+	void SetPasswordCacheEnabled(bool enabled) { m_password_cache_enabled = enabled ? 1 : 0; }
+
+	// Returns true if the plaintext password hashes (double makePWHash) to
+	// the AccountPasswordHash stored in account.dat. When the account has no
+	// stored hash (or it's all zero), there's nothing to verify against and
+	// this returns true so callers don't refuse a launch on a brand-new
+	// online account.
+	[[nodiscard]] bool VerifyPlaintextPassword(std::string_view plaintext) const;
+
+	// Mutates the cached Account entry matching `persistent_id`. Returns false
+	// if no such account is loaded. Used by the launch-time password prompt.
+	static bool ApplyPasswordToAccount(uint32 persistent_id, std::string_view plaintext, bool persist);
+
+	// Clears m_account_password_cache to zero and sets IsPasswordCacheEnabled=0
+	// for the cached Account matching `persistent_id`. When `persist` is true
+	// the change is written back to account.dat. Returns false if no such
+	// account is loaded. Used by the "remove password cache" action in
+	// General Settings -> Account.
+	static bool ClearPasswordCacheForAccount(uint32 persistent_id, bool persist);
 
 	// this will always return at least one account (default one)
 	static const std::vector<Account>& RefreshAccounts();
@@ -128,6 +168,8 @@ private:
 	uint32 m_principal_id = 0;
 	uint8 m_password_cache_enabled = 0;
 	std::array<uint8, 32> m_account_password_cache{};
+	// In-memory only - never persisted, never parsed from account.dat.
+	bool m_session_password_filled = false;
 
 	// misc storage for unused local properties
 	std::unordered_map<std::string, std::string> m_storage;

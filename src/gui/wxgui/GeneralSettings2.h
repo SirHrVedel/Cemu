@@ -88,7 +88,7 @@ private:
 	wxChoice *m_tv_device, *m_pad_device, *m_input_device, *m_portal_device;
 
 	// Account
-	wxButton* m_create_account, * m_delete_account;
+	wxButton* m_create_account, * m_delete_account, * m_remove_password_cache = nullptr;
 	wxChoice* m_active_account;
 	wxRadioBox* m_active_service;
 	wxCollapsiblePane* m_account_information;
@@ -106,6 +106,7 @@ private:
 
 	void OnAccountCreate(wxCommandEvent& event);
 	void OnAccountDelete(wxCommandEvent& event);
+	void OnAccountRemovePasswordCache(wxCommandEvent& event);
 	void OnAccountSettingsChanged(wxPropertyGridEvent& event);
 	void OnAudioLatencyChanged(wxCommandEvent& event);
 	void OnVolumeChanged(wxCommandEvent& event);

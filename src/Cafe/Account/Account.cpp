@@ -247,18 +247,18 @@ OnlineAccountError Account::GetOnlineAccountError() const
 	if (m_account_id.empty())
 		return OnlineAccountError::kNoAccountId;
 
-	if (!IsPasswordCacheEnabled())
-		return OnlineAccountError::kNoPasswordCached;
-
-	if (m_account_password_cache == decltype(m_account_password_cache){})
+	// IsPasswordCacheEnabled being off is allowed - the account is still a
+	// valid online account, the password just isn't cached on the console.
+	// Only treat a populated-but-empty cache as a hard error.
+	if (IsPasswordCacheEnabled() && m_account_password_cache == decltype(m_account_password_cache){})
 		return OnlineAccountError::kPasswordCacheEmpty;
 
 	/*if (m_simple_address_id == 0) not really needed
 		return false;*/
-	
+
 	if (m_principal_id == 0)
 		return OnlineAccountError::kNoPrincipalId;
-	
+
 	// TODO
 	return OnlineAccountError::kNone;
 }
@@ -266,6 +266,95 @@ OnlineAccountError Account::GetOnlineAccountError() const
 bool Account::IsValidOnlineAccount() const
 {
 	return GetOnlineAccountError() == OnlineAccountError::kNone;
+}
+
+void Account::SetPasswordFromPlaintext(std::string_view plaintext, bool persist)
+{
+	// Hash with the same algorithm real account.dat uses:
+	//   sha256(principalId_LE || {0x02,0x65,0x43,0x46} || plaintext)
+	// Verified against known plaintext + AccountPasswordCache pairs.
+	std::array<uint8, 32> hash{};
+	if (!plaintext.empty() && m_principal_id != 0)
+	{
+		makePWHash(reinterpret_cast<uint8*>(const_cast<char*>(plaintext.data())),
+		           static_cast<sint32>(plaintext.size()),
+		           m_principal_id,
+		           hash.data());
+	}
+	m_account_password_cache = hash;
+	if (persist)
+	{
+		// User opted to save - the on-disk truth becomes "cache enabled".
+		m_password_cache_enabled = 1;
+		m_session_password_filled = false;
+		(void)Save();
+	}
+	else
+	{
+		// Session-only: keep the on-disk flag intact so IsPasswordCacheEnabled
+		// keeps reporting the correct value to nn::act / the system menu.
+		m_session_password_filled = true;
+	}
+}
+
+bool Account::VerifyPlaintextPassword(std::string_view plaintext) const
+{
+	if (plaintext.empty() || m_principal_id == 0)
+		return false;
+
+	// AccountPasswordHash is parsed into the generic m_storage map at load
+	// time (see ParseFile). It's a 64-char hex string of the 32-byte hash.
+	const std::string_view stored_hex = GetStorageValue("AccountPasswordHash");
+	if (stored_hex.size() != 64)
+		return true; // no stored hash -> nothing to compare against, accept
+
+	const bool all_zero = std::all_of(stored_hex.begin(), stored_hex.end(),
+	                                  [](char c) { return c == '0'; });
+	if (all_zero)
+		return true; // never set -> accept
+
+	uint8 cache_bytes[32];
+	makePWHash(reinterpret_cast<uint8*>(const_cast<char*>(plaintext.data())),
+	           static_cast<sint32>(plaintext.size()), m_principal_id, cache_bytes);
+
+	uint8 hash_bytes[32];
+	makePWHash(cache_bytes, 32, m_principal_id, hash_bytes);
+
+	uint8 stored_bytes[32];
+	for (size_t i = 0; i < 32; ++i)
+		stored_bytes[i] = ConvertString<uint8>(std::string(stored_hex.substr(i * 2, 2)), 16);
+
+	return memcmp(hash_bytes, stored_bytes, 32) == 0;
+}
+
+bool Account::ApplyPasswordToAccount(uint32 persistent_id, std::string_view plaintext, bool persist)
+{
+	for (auto& acc : s_account_list)
+	{
+		if (acc.GetPersistentId() == persistent_id)
+		{
+			acc.SetPasswordFromPlaintext(plaintext, persist);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Account::ClearPasswordCacheForAccount(uint32 persistent_id, bool persist)
+{
+	for (auto& acc : s_account_list)
+	{
+		if (acc.GetPersistentId() == persistent_id)
+		{
+			acc.m_account_password_cache.fill(0);
+			acc.m_password_cache_enabled = 0;
+			acc.m_session_password_filled = false;
+			if (persist)
+				(void)acc.Save();
+			return true;
+		}
+	}
+	return false;
 }
 
 fs::path Account::GetFileName() const

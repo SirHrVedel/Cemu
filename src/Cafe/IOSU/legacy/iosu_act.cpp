@@ -47,6 +47,10 @@ struct actAccountData_t
 	// NNID
 	char accountId[64];
 	uint8 accountPasswordCache[32];
+	bool passwordCacheEnabled;
+	// 32-byte AccountPasswordHash (double makePWHash) parsed from account.dat.
+	// Zero when the account.dat has no such key or it's all zeros.
+	uint8 accountPasswordHash[32];
 	// country & language
 	uint32 countryIndex;
 	char country[8];
@@ -68,6 +72,12 @@ actAccountData_t _actAccountData[IOSU_ACT_ACCOUNT_MAX_COUNT] = {};
 bool _actAccountDataInitialized = false;
 int _actAccountCount = 0;
 
+// Slot (1-based) currently considered "loaded" by nn::act. 0 = none loaded;
+// queries for ACT_SLOT_CURRENT fall back to ActiveSettings::GetPersistentId().
+// LoadConsoleAccount sets it, UnloadConsoleAccount clears it. This lets the
+// emulated system menu switch accounts at runtime without rewriting CemuConfig.
+uint8 _loadedAccountSlot = 0;
+
 void FillAccountData(const Account& account, const bool online_enabled, int index)
 {
 	cemu_assert_debug(index < IOSU_ACT_ACCOUNT_MAX_COUNT);
@@ -84,7 +94,34 @@ void FillAccountData(const Account& account, const bool online_enabled, int inde
 	data.principalId = account.GetPrincipalId();
 	// NNID
 	std::copy(account.GetAccountId().begin(), account.GetAccountId().end(), data.accountId);
-	std::copy(account.GetAccountPasswordCache().begin(), account.GetAccountPasswordCache().end(), data.accountPasswordCache);
+	// IsPasswordCacheEnabled exposed to nn::act callers must reflect the
+	// on-disk truth so the system menu's user-select screen prompts when the
+	// account.dat says caching is off, regardless of whether the launch-time
+	// prompt populated a session-only password.
+	data.passwordCacheEnabled = account.IsPasswordCacheEnabled();
+	// Cache bytes follow availability instead of the flag: either an on-disk
+	// cache or a session-supplied one provides usable bytes for NAPI auth.
+	// Both code paths leave m_account_password_cache populated in those cases;
+	// in all others the array is zero-initialised, which is what we want here.
+	if (account.IsPasswordCacheEnabled() || account.HasSessionPassword())
+	{
+		std::copy(account.GetAccountPasswordCache().begin(), account.GetAccountPasswordCache().end(), data.accountPasswordCache);
+	}
+	else
+	{
+		std::fill(std::begin(data.accountPasswordCache), std::end(data.accountPasswordCache), uint8{0});
+	}
+
+	// Parse the 64-char hex AccountPasswordHash from the generic key/value map.
+	// The Account class drops everything not explicitly typed into m_storage,
+	// which is exactly what we want here - no extra parsing needed in Account.
+	std::fill(std::begin(data.accountPasswordHash), std::end(data.accountPasswordHash), uint8{0});
+	const std::string_view passwordHashHex = account.GetStorageValue("AccountPasswordHash");
+	if (passwordHashHex.size() == 64)
+	{
+		for (size_t i = 0; i < 32; ++i)
+			data.accountPasswordHash[i] = ConvertString<uint8>(std::string(passwordHashHex.substr(i * 2, 2)), 16);
+	}
 	// country & language
 	data.countryIndex = account.GetCountry();
 	strcpy(data.country, NCrypto::GetCountryAsString(data.countryIndex));
@@ -123,6 +160,25 @@ void iosuAct_loadAccounts()
 	_actAccountCount = counter;
 	_actAccountDataInitialized = true;
 
+	// Pick the initial loaded slot from the boot persistent id, mirroring real
+	// hw behaviour where Initialize implicitly leaves the system-default
+	// account loaded. Computed inline rather than via getCurrentAccountSlot()
+	// because that helper reads _loadedAccountSlot, which we're seeding here.
+	{
+		const uint32 bootPersistentId = ActiveSettings::GetPersistentId();
+		_loadedAccountSlot = 0;
+		for (int i = 0; i < _actAccountCount; i++)
+		{
+			if (_actAccountData[i].isValid && _actAccountData[i].persistentId == bootPersistentId)
+			{
+				_loadedAccountSlot = (uint8)(i + 1);
+				break;
+			}
+		}
+		if (_loadedAccountSlot == 0 && _actAccountCount > 0)
+			_loadedAccountSlot = 1; // fallback to first valid slot
+	}
+
 	const uint8 activeSlot = iosu::act::getCurrentAccountSlot();
 	const auto& active_acc = Account::GetAccount(ActiveSettings::GetPersistentId());
 	cemuLog_log(LogType::Force, "IOSU_ACT: loaded {} account(s), using {} in slot {}", counter, boost::nowide::narrow(std::wstring(active_acc.GetMiiName())), activeSlot);
@@ -159,14 +215,9 @@ sint32 iosuAct_getAccountIndexBySlot(uint8 slot)
 {
 	if (slot == iosu::act::ACT_SLOT_CURRENT || slot == 0xFF)
 	{
-		// find the active account's actual index by persistent ID
-		const uint32 persistent_id = ActiveSettings::GetPersistentId();
-		for (int i = 0; i < _actAccountCount; i++)
-		{
-			if (_actAccountData[i].isValid && _actAccountData[i].persistentId == persistent_id)
-				return i;
-		}
-		return 0; // fallback
+		// Delegate to getCurrentAccountSlot() so Load/UnloadConsoleAccount
+		// runtime overrides take effect everywhere ACT_SLOT_CURRENT resolves.
+		return iosu::act::getCurrentAccountSlot() - 1;
 	}
 	cemu_assert_debug(slot != 0);
 	cemu_assert_debug(slot <= IOSU_ACT_ACCOUNT_MAX_COUNT);
@@ -397,6 +448,11 @@ namespace iosu
 	{
 		uint8 getCurrentAccountSlot()
 		{
+			// Honor the runtime override set by LoadConsoleAccount. When cleared
+			// by UnloadConsoleAccount (or never set), fall back to the boot
+			// persistent id from ActiveSettings.
+			if (_loadedAccountSlot != 0)
+				return _loadedAccountSlot;
 			const uint32 persistent_id = ActiveSettings::GetPersistentId();
 			for (int i = 0; i < _actAccountCount; i++)
 			{
@@ -867,6 +923,17 @@ int iosuAct_thread()
 				strcpy(actCemuRequest->resultString.strBuffer, _actAccountData[accountIndex].country);
 				actCemuRequest->setACTReturnCode(0);
 			}
+			else if (actCemuRequest->requestCode == IOSU_ARC_PASSWORDCACHEENABLED)
+			{
+				// Real hw: /dev/act opens account.dat for the requested slot and
+				// returns the parsed "IsPasswordCacheEnabled" field (one byte).
+				// Cemu's Account class already parses that key from account.dat
+				// (Account.cpp:539), so the value sits in _actAccountData[].
+				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
+				_cancelIfAccountDoesNotExist();
+				actCemuRequest->resultU32.u32 = _actAccountData[accountIndex].passwordCacheEnabled ? 1u : 0u;
+				actCemuRequest->setACTReturnCode(0);
+			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_TIMEZONEID)
 			{
 				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
@@ -902,6 +969,84 @@ int iosuAct_thread()
 				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
 				_cancelIfAccountDoesNotExist();
 				memcpy(actCemuRequest->resultBinary.binBuffer, &_actAccountData[accountIndex].miiData, sizeof(FFLData_t));
+				actCemuRequest->setACTReturnCode(0);
+			}
+			else if (actCemuRequest->requestCode == IOSU_ARC_LOAD_CONSOLE_ACCOUNT)
+			{
+				// On real hardware /dev/act opens
+				//   /vol/storage_mlc01/usr/save/system/act/common.dat
+				// reads the record for accountSlot, optionally checks the password,
+				// and marks that slot as the currently-loaded account.
+				//
+				// Cemu's IOSU already mirrors that file into _actAccountData[] during
+				// iosuAct_loadAccounts() (IOSU_ARC_INIT), so no file I/O happens here -
+				// we confirm the slot is populated, verify any caller-supplied
+				// password against the stored AccountPasswordHash, refresh the slot
+				// + Account-object cache on success, and finally update
+				// _loadedAccountSlot + the ActiveSettings session override so
+				// subsequent ACT_SLOT_CURRENT lookups and NAPI auth follow the new
+				// active account.
+				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
+				_cancelIfAccountDoesNotExist();
+
+				// ACTLoadOption / flag only tune which fields the real ACT module
+				// pre-fetches, which is always 'all of them' for us.
+				(void)actCemuRequest->loadOption;
+				(void)actCemuRequest->loadFlag;
+
+				if (actCemuRequest->loadPassword[0] != '\0')
+				{
+					const size_t pwLen = strnlen(actCemuRequest->loadPassword,
+					                             sizeof(actCemuRequest->loadPassword) - 1);
+					const uint32 principalId = _actAccountData[accountIndex].principalId;
+
+					// AccountPasswordHash = makePWHash(AccountPasswordCache, principalId)
+					// AccountPasswordCache = makePWHash(plaintext,           principalId)
+					// Both keyed by PrincipalId (verified against real account.dat).
+					uint8 computedCache[32];
+					makePWHash((uint8*)actCemuRequest->loadPassword, (sint32)pwLen,
+					           principalId, computedCache);
+					uint8 computedHash[32];
+					makePWHash(computedCache, 32, principalId, computedHash);
+
+					const uint8* storedHash = _actAccountData[accountIndex].accountPasswordHash;
+					const bool storedHashSet = std::any_of(storedHash, storedHash + 32,
+					                                       [](uint8 b) { return b != 0; });
+
+					if (storedHashSet && memcmp(computedHash, storedHash, 32) != 0)
+					{
+						// Wrong password. Caller (system menu) will re-prompt.
+						// TODO: identify the exact real-hw error code for this case;
+						// using ACTResult_InvalidValue as a placeholder.
+						ioctlReturnValue = 0;
+						actCemuRequest->setACTReturnCode(ACTResult_InvalidValue);
+						actCemuRequest->resultU32.u32 = 0;
+						iosuIoctl_completeRequest(ioQueueEntry, ioctlReturnValue);
+						continue;
+					}
+
+					// Password verified (or no stored hash to compare against):
+					// 1. Refresh the IOSU slot cache with the new bytes so any
+					//    in-process ACT consumer reading _actAccountData picks it up.
+					// 2. Mirror the same bytes into the Account object via
+					//    ApplyPasswordToAccount(persist=false). NAPI reads
+					//    Account::GetAccountPasswordCache() directly, so this is
+					//    what actually grants online access for the new account.
+					memcpy(_actAccountData[accountIndex].accountPasswordCache, computedCache, 32);
+					Account::ApplyPasswordToAccount(
+						_actAccountData[accountIndex].persistentId,
+						std::string_view(actCemuRequest->loadPassword, pwLen),
+						/*persist*/ false);
+				}
+
+				_loadedAccountSlot = (uint8)(accountIndex + 1);
+				// Re-point NAPI / Account::GetCurrentAccount() at the freshly
+				// loaded slot for the rest of this title run. Reset on the next
+				// FileLoad so the GUI's account selection wins again.
+				ActiveSettings::SetSessionPersistentIdOverride(
+					_actAccountData[accountIndex].persistentId);
+
+				actCemuRequest->resultU32.u32 = _actAccountData[accountIndex].persistentId;
 				actCemuRequest->setACTReturnCode(0);
 			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_INIT)

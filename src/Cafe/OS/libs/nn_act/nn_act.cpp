@@ -24,6 +24,11 @@ memset(actRequest, 0, sizeof(iosuActCemuRequest_t));
 // Returned by ACT functions when a required output pointer is null (matches native RPL behaviour)
 static const uint32 ACTResult_NullPointer        = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6,   NN_RESULT_MODULE_NN_ACT, 0x12C80);
 static const uint32 ACTResult_AccountDoesNotExist = BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_NN_ACT, NN_ACT_RESULT_ACCOUNT_DOES_NOT_EXIST);
+// Returned by LoadConsoleAccount when its `password` argument exceeds 16 chars
+static const uint32 ACTResult_OutOfRange         = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6,   NN_RESULT_MODULE_NN_ACT, 0x12D80);
+// Returned by LoadConsoleAccount when the act module has not been Initialize()'d.
+// Matches the literal at 0x0200AF48 in nn_act.rpl (lis r31,-0x3f8f + addi -0x580).
+static const uint32 ACTResult_NotInitialized     = 0xC070FA80;
 
 uint32 getNNReturnCode(uint32 iosError, iosuActCemuRequest_t* actRequest)
 {
@@ -47,7 +52,9 @@ namespace nn
 {
 namespace act
 {
-		
+		sint32 g_initializeCount = 0; // inc in Initialize and dec in Finalize
+
+
 		uint32 GetPersistentIdEx(uint8 slot)
 		{
 			actPrepareRequest();
@@ -145,8 +152,21 @@ namespace act
 
 		uint32 IsPasswordCacheEnabledEx(uint8 slot)
 		{
-			// todo: read the value from the individual account via IOSU
-			return 1;
+			// Mirrors RPL @ 0x0200B338: not initialized -> return 0; otherwise
+			// invoke shimutil::AcquireAccountInfo(slot, &outByte, 1, infoType=0xE)
+			// which on real hw makes /dev/act open the slot's account.dat and
+			// return the "IsPasswordCacheEnabled" field. Cemu maps that to its
+			// IOSU_ARC_PASSWORDCACHEENABLED handler, which reads the value
+			// Account.cpp already parsed out of account.dat at boot.
+			if (g_initializeCount == 0)
+				return 0;
+			actPrepareRequest2();
+			actRequest->requestCode = IOSU_ARC_PASSWORDCACHEENABLED;
+			actRequest->accountSlot = slot;
+			uint32 ioctlResult = _doCemuActRequest(actRequest);
+			if ((ioctlResult & 0x80000000) != 0)
+				return 0;
+			return actRequest->resultU32.u32 != 0 ? 1u : 0u;
 		}
 
 		uint32 IsPasswordCacheEnabled()
@@ -174,7 +194,6 @@ namespace act
 			return 0;
 		}
 
-		sint32 g_initializeCount = 0; // inc in Initialize and dec in Finalize
 		uint32 Initialize()
 		{
 			// usually uses a mutex which is initialized in -> global constructor keyed to'_17_act_shim_util_cpp
@@ -195,6 +214,58 @@ namespace act
 		{
 			NN_ERROR_CODE errCode = NNResultToErrorCode(*nnResult, NN_RESULT_MODULE_NN_ACT);
 			return errCode;
+		}
+
+		nnResult Cancel()
+		{
+			// Mirrors RPL @ 0x0200398C..39C4: same init-flag guard as Load/Unload,
+			// then posts shimutil IPC op 0x64 to /dev/act which aborts any
+			// in-flight async ACT operations (token refresh, server binding, ...).
+			// The Wii U system menu calls this when navigating to the user-select
+			// screen, before UnloadConsoleAccount.
+			//
+			// Cemu has no asynchronous ACT operations - every IOSU_ARC_* handler
+			// completes synchronously inside iosuAct_thread - so there is nothing
+			// to cancel. We keep the init-flag check for behaviour fidelity and
+			// skip the IPC roundtrip. If async work is added to /dev/act later,
+			// route the cancellation through IOSU via a new IOSU_ARC_* subcode.
+			if (g_initializeCount == 0)
+				return ACTResult_NotInitialized;
+			return 0;
+		}
+
+		nnResult LoadConsoleAccount(uint8 slot, uint32 option, const char* password, bool flag)
+		{
+			// Mirrors RPL @ 0x0200AF38..AF60: check the act init flag first.
+			if (g_initializeCount == 0)
+				return ACTResult_NotInitialized;
+
+			// Mirrors RPL @ 0x0200AF9C..AFCC: password must fit in 16 chars
+			// (strnlen(p, 17) + 1 <= 0x11). Otherwise ACTResult_OutOfRange.
+			size_t passwordLen = 0;
+			if (password)
+			{
+				while (passwordLen < 17 && password[passwordLen] != '\0')
+					++passwordLen;
+				if (passwordLen >= 17)
+					return ACTResult_OutOfRange;
+			}
+
+			// Hand the request to IOSU. All account/file state lives there - the
+			// real RPL posts a shimutil ipc; we use the IOSU_ACT_REQUEST_CEMU envelope.
+			actPrepareRequest();
+			actRequest->requestCode = IOSU_ARC_LOAD_CONSOLE_ACCOUNT;
+			actRequest->accountSlot = slot;
+			actRequest->loadOption  = option;
+			actRequest->loadFlag    = flag ? 1 : 0;
+			if (password && passwordLen > 0)
+				memcpy(actRequest->loadPassword, password, passwordLen + 1);
+			else
+				actRequest->loadPassword[0] = '\0';
+
+			uint32 ioctlResult = __depr__IOS_Ioctlv(IOS_DEVICE_ACT, IOSU_ACT_REQUEST_CEMU,
+			                                       1, 1, actBufferVector);
+			return getNNReturnCode(ioctlResult, actRequest);
 		}
 	}
 }
@@ -773,6 +844,8 @@ namespace nn::act
 			cafeExportRegisterFunc(nn::act::GetErrorCode, "nn_act", "GetErrorCode__Q2_2nn3actFRCQ2_2nn6Result", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabled, "nn_act", "IsPasswordCacheEnabled__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabledEx, "nn_act", "IsPasswordCacheEnabledEx__Q2_2nn3actFUc", LogType::Placeholder);
+			cafeExportRegisterFunc(nn::act::LoadConsoleAccount, "nn_act", "LoadConsoleAccount__Q2_2nn3actFUc13ACTLoadOptionPCcb", LogType::Placeholder);
+			cafeExportRegisterFunc(nn::act::Cancel, "nn_act", "Cancel__Q2_2nn3actFv", LogType::Placeholder);
 
 			// placeholders / incomplete implementations
 			osLib_addFunction("nn_act", "HasNfsAccount__Q2_2nn3actFv", nnActExport_HasNfsAccount);

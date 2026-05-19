@@ -138,17 +138,44 @@ void ActiveSettings::EnableAudioOnlyAux(bool state)
 
 uint32 ActiveSettings::GetPersistentId()
 {
+	// Session override (set by the IOSU LoadConsoleAccount handler) wins over
+	// both the --account command line and the persisted GUI selection, since
+	// it represents an explicit in-title user switch by the system menu.
+	if (s_session_persistent_id_override != 0)
+		return s_session_persistent_id_override;
 	return LaunchSettings::GetPersistentId().value_or(GetConfig().account.m_persistent_id);
+}
+
+void ActiveSettings::SetSessionPersistentIdOverride(uint32 persistentId)
+{
+	s_session_persistent_id_override = persistentId;
+}
+
+uint32 ActiveSettings::GetSessionPersistentIdOverride()
+{
+	return s_session_persistent_id_override;
 }
 
 bool ActiveSettings::IsOnlineEnabled()
 {
+	if (s_force_offline_session)
+		return false;
 	if(!Account::GetAccount(GetPersistentId()).IsValidOnlineAccount())
 		return false;
 	if(!HasRequiredOnlineFiles())
 		return false;
 	NetworkService networkService = static_cast<NetworkService>(GetConfig().GetAccountNetworkService(GetPersistentId()));
 	return networkService == NetworkService::Nintendo || networkService == NetworkService::Pretendo || networkService == NetworkService::Custom;
+}
+
+void ActiveSettings::SetForceOfflineForCurrentLaunch(bool state)
+{
+	s_force_offline_session = state;
+}
+
+bool ActiveSettings::IsForceOfflineForCurrentLaunch()
+{
+	return s_force_offline_session;
 }
 
 bool ActiveSettings::HasRequiredOnlineFiles()

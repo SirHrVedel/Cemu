@@ -142,25 +142,6 @@ void FillAccountData(const Account& account, const bool online_enabled, int inde
 	}
 }
 
-void iosuAct_resetForTitleShutdown()
-{
-	// Wipe the per-title IOSU ACT view so the next launch re-runs
-	// iosuAct_loadAccounts() with whatever the GUI currently has selected.
-	// Without this, the second title in a single Cemu run keeps the first
-	// title's _loadedAccountSlot (because iosuAct_loadAccounts early-returns
-	// on _actAccountDataInitialized) and ends up reporting the wrong slot.
-	_actAccountDataInitialized = false;
-	_actAccountCount = 0;
-	_loadedAccountSlot = 0;
-	for (auto& slot : _actAccountData)
-		slot = {};
-	// Drop the session-level ActiveSettings override too so the GUI
-	// selection wins again on the next launch. FileLoad already clears
-	// this on the entry path; doing it here as well is belt-and-suspenders
-	// for paths that don't go through FileLoad (e.g. headless reboots).
-	ActiveSettings::SetSessionPersistentIdOverride(0);
-}
-
 void iosuAct_loadAccounts()
 {
 	if (_actAccountDataInitialized)

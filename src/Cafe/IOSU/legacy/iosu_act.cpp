@@ -1124,6 +1124,20 @@ int iosuAct_thread()
 				actCemuRequest->resultU32.u32 = _actAccountData[accountIndex].persistentId;
 				actCemuRequest->setACTReturnCode(0);
 			}
+			else if (actCemuRequest->requestCode == IOSU_ARC_UNLOAD_CONSOLE_ACCOUNT)
+			{
+				// nn::act::UnloadConsoleAccount() - counterpart to
+				// LoadConsoleAccount. Real hw drops the currently-loaded ACT
+				// session state. Cemu just clears the runtime override so the
+				// next ACT_SLOT_CURRENT query falls back to the boot
+				// persistent id, and points the session ActiveSettings
+				// override back at the GUI / launch selection so NAPI follows
+				// suit. The IOSU slot cache itself is left alone since the
+				// next Load could pick the same account back up.
+				_loadedAccountSlot = 0;
+				ActiveSettings::SetSessionPersistentIdOverride(0);
+				actCemuRequest->setACTReturnCode(0);
+			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_INIT)
 			{
 				iosuAct_loadAccounts();

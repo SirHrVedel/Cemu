@@ -216,6 +216,23 @@ namespace act
 			return errCode;
 		}
 
+		nnResult SetDefaultAccount(uint8 slot)
+		{
+			// Mirrors RPL @ 0x0200B1EC: init guard, then shim op 5 with the
+			// slot in the payload byte. The IOSU handler persists the new
+			// default into CemuConfig (same field the GUI's account picker
+			// uses) and updates the session active-account override so the
+			// switch takes effect immediately. Returns the IPC nnResult,
+			// which the RPL preserves across cleanup (unlike
+			// EnableAccountPasswordCache).
+			if (g_initializeCount == 0)
+				return ACTResult_NotInitialized;
+			actPrepareRequest2();
+			actRequest->requestCode = IOSU_ARC_SET_DEFAULT_ACCOUNT;
+			actRequest->accountSlot = slot;
+			return _doCemuActRequest(actRequest);
+		}
+
 		nnResult EnableAccountPasswordCache(bool enable)
 		{
 			// Mirrors RPL @ 0x0200B3D0: init guard, then shim op 6 with
@@ -664,13 +681,13 @@ void nnActExport_GetParentalControlSlotNoEx(PPCInterpreter_t* hCPU)
 
 void nnActExport_GetDefaultAccount(PPCInterpreter_t* hCPU)
 {
-	// Returns the 1-based slot number that the system should auto-load at
-	// boot. On real hw this is a "primary account" preference saved on the
-	// system. In Cemu we use whichever account the GUI currently has
-	// selected (or the IOSU LoadConsoleAccount session override, if the
-	// menu has already switched). Hardcoding this to 1 caused the Wii U
-	// menu to always boot into slot 1 regardless of the user's GUI choice.
-	const uint8 slot = iosu::act::getCurrentAccountSlot();
+	// Returns the 1-based slot of the persistent default account - the one
+	// the system would auto-load at boot. Reads CemuConfig (the same field
+	// the GUI's account picker and SetDefaultAccount write to) and ignores
+	// LoadConsoleAccount's mid-session override, so the menu's per-user
+	// "Default Account: Yes/No" indicator stays anchored to a single slot
+	// while the user shuffles through the user-select screen.
+	const uint8 slot = iosu::act::getDefaultAccountSlot();
 	cemuLog_logDebug(LogType::Force, "nn_act.GetDefaultAccount() -> {}", slot);
 	osLib_returnFromFunction(hCPU, slot);
 }
@@ -869,6 +886,7 @@ namespace nn::act
 			cafeExportRegisterFunc(nn::act::LoadConsoleAccount, "nn_act", "LoadConsoleAccount__Q2_2nn3actFUc13ACTLoadOptionPCcb", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::Cancel, "nn_act", "Cancel__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::EnableAccountPasswordCache, "nn_act", "EnableAccountPasswordCache__Q2_2nn3actFb", LogType::Placeholder);
+			cafeExportRegisterFunc(nn::act::SetDefaultAccount, "nn_act", "SetDefaultAccount__Q2_2nn3actFUc", LogType::Placeholder);
 
 			// placeholders / incomplete implementations
 			osLib_addFunction("nn_act", "HasNfsAccount__Q2_2nn3actFv", nnActExport_HasNfsAccount);

@@ -3,6 +3,13 @@
 void iosuAct_init_depr();
 bool iosuAct_isInitialized();
 
+// Drops the cached _actAccountData[] snapshot so the next title launch
+// re-runs iosuAct_loadAccounts() and picks up the current GUI account
+// selection. Must be called from CafeSystem::ShutdownTitle() - otherwise
+// the second title in a single Cemu run keeps the first title's
+// _loadedAccountSlot and reports the wrong slot.
+void iosuAct_resetForTitleShutdown();
+
 #define ACT_ACCOUNTID_LENGTH 	(17) // includes '\0'
 
 // Mii

@@ -1022,6 +1022,10 @@ namespace CafeSystem
         RPLLoader_UnloadAll();
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->TitleStop();
+		// drop legacy IOSU ACT state so the next title launch reloads the
+		// account list with the current GUI selection (the deprecated iosu_act
+		// path isn't part of s_iosuModules so it doesn't get a TitleStop hook).
+		iosuAct_resetForTitleShutdown();
         // reset Cemu subsystems
         PPCRecompiler_Shutdown();
         GraphicPack2::Reset();

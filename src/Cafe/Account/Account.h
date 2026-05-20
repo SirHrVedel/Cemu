@@ -131,6 +131,14 @@ public:
 	// General Settings -> Account.
 	static bool ClearPasswordCacheForAccount(uint32 persistent_id, bool persist);
 
+	// Flips m_password_cache_enabled (without touching the cache bytes) for the
+	// cached Account matching `persistent_id`. When `persist` is true the
+	// change is written back to account.dat - any cache bytes already in
+	// memory (e.g. a session password supplied via the launch prompt) ride
+	// through and become a real on-disk cache. Returns false if no such
+	// account is loaded. Used by nn::act::EnableAccountPasswordCache.
+	static bool SetPasswordCacheEnabledForAccount(uint32 persistent_id, bool enable, bool persist);
+
 	// this will always return at least one account (default one)
 	static const std::vector<Account>& RefreshAccounts();
 	static void UpdatePersisidDat();

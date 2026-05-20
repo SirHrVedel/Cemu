@@ -125,6 +125,7 @@ struct iosuActCemuRequest_t
 #define IOSU_ARC_TIMEZONEID				0x0D
 #define IOSU_ARC_LOAD_CONSOLE_ACCOUNT	0x0E
 #define IOSU_ARC_PASSWORDCACHEENABLED	0x0F
+#define IOSU_ARC_ENABLE_PASSWORD_CACHE	0x10
 
 uint32 iosuAct_getAccountIdOfCurrentAccount();
 

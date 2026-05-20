@@ -221,9 +221,16 @@ std::error_code Account::Save()
 		file << fmt::format("PrincipalId={:x}", m_principal_id) << std::endl;
 		file << fmt::format("IsPasswordCacheEnabled={:x}", m_password_cache_enabled) << std::endl;
 
+		// On-disk AccountPasswordCache is gated by IsPasswordCacheEnabled: when
+		// disabled we write zeros so the file accurately reflects "no password
+		// cached", but the in-memory m_account_password_cache is left intact
+		// for the rest of this Cemu session. That way the menu's
+		// EnableAccountPasswordCache(true) -> (false) -> (true) round-trip
+		// restores a working cache from memory without forcing the user to
+		// re-type the password.
 		file << fmt::format("AccountPasswordCache=");
 		for (const auto& b : m_account_password_cache)
-			file << fmt::format("{:02x}", b);
+			file << fmt::format("{:02x}", m_password_cache_enabled ? b : uint8{0});
 		file << std::endl;
 		
 		// write rest of stuff we got
@@ -247,11 +254,11 @@ OnlineAccountError Account::GetOnlineAccountError() const
 	if (m_account_id.empty())
 		return OnlineAccountError::kNoAccountId;
 
-	// IsPasswordCacheEnabled being off is allowed - the account is still a
-	// valid online account, the password just isn't cached on the console.
-	// Only treat a populated-but-empty cache as a hard error.
-	if (IsPasswordCacheEnabled() && m_account_password_cache == decltype(m_account_password_cache){})
-		return OnlineAccountError::kPasswordCacheEmpty;
+	// IsPasswordCacheEnabled being off, or an all-zero cache, is no longer a
+	// hard error: the launch-time prompt collects a password when needed, and
+	// the user can also explicitly pick Offline Mode from that dialog. NAPI
+	// will surface a server-side auth failure if the cache truly is unusable.
+	// Don't pre-emptively force the account offline here.
 
 	/*if (m_simple_address_id == 0) not really needed
 		return false;*/
@@ -349,6 +356,29 @@ bool Account::ClearPasswordCacheForAccount(uint32 persistent_id, bool persist)
 			acc.m_account_password_cache.fill(0);
 			acc.m_password_cache_enabled = 0;
 			acc.m_session_password_filled = false;
+			if (persist)
+				(void)acc.Save();
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Account::SetPasswordCacheEnabledForAccount(uint32 persistent_id, bool enable, bool persist)
+{
+	for (auto& acc : s_account_list)
+	{
+		if (acc.GetPersistentId() == persistent_id)
+		{
+			acc.m_password_cache_enabled = enable ? 1 : 0;
+			// Cache bytes are deliberately left alone. This matches real hw
+			// behaviour observed on account.dat (IsPasswordCacheEnabled=0 next
+			// to populated AccountPasswordCache=...). The menu's toggle is a
+			// flag-only operation - disable then re-enable in the same session
+			// must restore a working cache. Wiping bytes is reserved for the
+			// Cemu GUI's "Remove password cache" action (ClearPasswordCacheForAccount).
+			if (enable)
+				acc.m_session_password_filled = false; // promote to on-disk cache
 			if (persist)
 				(void)acc.Save();
 			return true;

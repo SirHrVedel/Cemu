@@ -216,6 +216,22 @@ namespace act
 			return errCode;
 		}
 
+		nnResult EnableAccountPasswordCache(bool enable)
+		{
+			// Mirrors RPL @ 0x0200B3D0: init guard, then shim op 6 with
+			// (slot=ACT_SLOT_CURRENT, enable=b). Real hw effectively returns
+			// void (no save of the finalize result before the cleanup frees
+			// clobber r3); we surface the init-flag failure as an nnResult so
+			// callers that do check the return value get useful information.
+			if (g_initializeCount == 0)
+				return ACTResult_NotInitialized;
+			actPrepareRequest2();
+			actRequest->requestCode = IOSU_ARC_ENABLE_PASSWORD_CACHE;
+			actRequest->accountSlot = iosu::act::ACT_SLOT_CURRENT;
+			actRequest->loadFlag    = enable ? 1 : 0;
+			return _doCemuActRequest(actRequest);
+		}
+
 		nnResult Cancel()
 		{
 			// Mirrors RPL @ 0x0200398C..39C4: same init-flag guard as Load/Unload,
@@ -846,6 +862,7 @@ namespace nn::act
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabledEx, "nn_act", "IsPasswordCacheEnabledEx__Q2_2nn3actFUc", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::LoadConsoleAccount, "nn_act", "LoadConsoleAccount__Q2_2nn3actFUc13ACTLoadOptionPCcb", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::Cancel, "nn_act", "Cancel__Q2_2nn3actFv", LogType::Placeholder);
+			cafeExportRegisterFunc(nn::act::EnableAccountPasswordCache, "nn_act", "EnableAccountPasswordCache__Q2_2nn3actFb", LogType::Placeholder);
 
 			// placeholders / incomplete implementations
 			osLib_addFunction("nn_act", "HasNfsAccount__Q2_2nn3actFv", nnActExport_HasNfsAccount);

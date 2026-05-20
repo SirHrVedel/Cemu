@@ -923,6 +923,27 @@ int iosuAct_thread()
 				strcpy(actCemuRequest->resultString.strBuffer, _actAccountData[accountIndex].country);
 				actCemuRequest->setACTReturnCode(0);
 			}
+			else if (actCemuRequest->requestCode == IOSU_ARC_ENABLE_PASSWORD_CACHE)
+			{
+				// nn::act::EnableAccountPasswordCache(bool). Real hw posts shim
+				// op 6 with (slot=ACT_SLOT_CURRENT, enable=b). Effect: toggle
+				// IsPasswordCacheEnabled on the currently loaded account and
+				// persist account.dat. Cache bytes are deliberately untouched -
+				// the menu's toggle is flag-only so the user can disable then
+				// re-enable in the same session without losing the password.
+				// To actually wipe the cache, use Cemu's "Remove password
+				// cache" button (which routes through ClearPasswordCacheForAccount).
+				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
+				_cancelIfAccountDoesNotExist();
+
+				const bool enable = actCemuRequest->loadFlag != 0;
+				_actAccountData[accountIndex].passwordCacheEnabled = enable;
+				Account::SetPasswordCacheEnabledForAccount(
+					_actAccountData[accountIndex].persistentId,
+					enable,
+					/*persist*/ true);
+				actCemuRequest->setACTReturnCode(0);
+			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_PASSWORDCACHEENABLED)
 			{
 				// Real hw: /dev/act opens account.dat for the requested slot and
@@ -1039,12 +1060,19 @@ int iosuAct_thread()
 						/*persist*/ false);
 				}
 
-				_loadedAccountSlot = (uint8)(accountIndex + 1);
+				const uint8 newSlot = (uint8)(accountIndex + 1);
+				_loadedAccountSlot = newSlot;
 				// Re-point NAPI / Account::GetCurrentAccount() at the freshly
 				// loaded slot for the rest of this title run. Reset on the next
 				// FileLoad so the GUI's account selection wins again.
 				ActiveSettings::SetSessionPersistentIdOverride(
 					_actAccountData[accountIndex].persistentId);
+
+				// Mirror the iosuAct_loadAccounts() boot log so switching mid-
+				// session via the system menu leaves a visible trail.
+				const auto& switched = Account::GetAccount(_actAccountData[accountIndex].persistentId);
+				cemuLog_log(LogType::Force, "IOSU_ACT: using account {} in slot {}",
+					boost::nowide::narrow(std::wstring(switched.GetMiiName())), newSlot);
 
 				actCemuRequest->resultU32.u32 = _actAccountData[accountIndex].persistentId;
 				actCemuRequest->setACTReturnCode(0);

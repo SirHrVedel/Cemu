@@ -51,20 +51,21 @@ LoggingWindow::~LoggingWindow()
 
 void LoggingWindow::Log(std::string_view filter, std::string_view message)
 {
-	wxLogEvent event(std::string {filter}, std::string{ message });
+	// cemuLog_log passes UTF-8 byte strings (CODING_STYLE.md), but wxString's
+	// implicit ctor from std::string uses the platform's locale narrow
+	// encoding (CP1252 on most Windows installs) and mangles non-ASCII bytes.
+	// Use FromUTF8 explicitly so characters like aeoeo / e+ring / o-slash
+	// (and any other multi-byte UTF-8) survive the trip into wxString.
+	wxLogEvent event(wxString::FromUTF8(filter.data(), filter.size()),
+	                 wxString::FromUTF8(message.data(), message.size()));
 	OnLogMessage(event);
-
-	//const auto log_event = new wxLogEvent(filter, message);
-	//wxQueueEvent(s_instance, log_event);
 }
 
 void LoggingWindow::Log(std::string_view filter, std::wstring_view message)
 {
-	wxLogEvent event(std::string {filter}, std::wstring{ message });
+	wxLogEvent event(wxString::FromUTF8(filter.data(), filter.size()),
+	                 wxString(message.data(), message.size()));
 	OnLogMessage(event);
-
-	//const auto log_event = new wxLogEvent(filter, message);
-	//wxQueueEvent(s_instance, log_event);
 }
 
 void LoggingWindow::OnLogMessage(wxLogEvent& event)

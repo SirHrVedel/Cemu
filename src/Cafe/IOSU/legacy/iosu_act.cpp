@@ -1134,8 +1134,20 @@ int iosuAct_thread()
 				// override back at the GUI / launch selection so NAPI follows
 				// suit. The IOSU slot cache itself is left alone since the
 				// next Load could pick the same account back up.
+				const uint8 previousSlot = _loadedAccountSlot;
 				_loadedAccountSlot = 0;
 				ActiveSettings::SetSessionPersistentIdOverride(0);
+				if (previousSlot != 0 && previousSlot <= IOSU_ACT_ACCOUNT_MAX_COUNT &&
+					_actAccountData[previousSlot - 1].isValid)
+				{
+					const auto& unloaded = Account::GetAccount(_actAccountData[previousSlot - 1].persistentId);
+					cemuLog_log(LogType::Force, "IOSU_ACT: unloaded account {} from slot {}",
+						boost::nowide::narrow(std::wstring(unloaded.GetMiiName())), previousSlot);
+				}
+				else
+				{
+					cemuLog_log(LogType::Force, "IOSU_ACT: unloaded console account");
+				}
 				actCemuRequest->setACTReturnCode(0);
 			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_INIT)

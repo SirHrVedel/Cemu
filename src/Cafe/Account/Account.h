@@ -139,6 +139,13 @@ public:
 	// account is loaded. Used by nn::act::EnableAccountPasswordCache.
 	static bool SetPasswordCacheEnabledForAccount(uint32 persistent_id, bool enable, bool persist);
 
+	// Wipes every account's session-supplied password (the in-memory cache
+	// bytes filled when the user entered a password without ticking "Save
+	// password"). Called at the start of each FileLoad so the launch prompt
+	// reappears for every title launch when the user opted out of saving.
+	// On-disk caches (m_password_cache_enabled == 1) are left untouched.
+	static void ClearAllSessionPasswords();
+
 	// this will always return at least one account (default one)
 	static const std::vector<Account>& RefreshAccounts();
 	static void UpdatePersisidDat();

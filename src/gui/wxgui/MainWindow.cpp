@@ -508,6 +508,12 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 	// force-offline override.
 	ActiveSettings::SetForceOfflineForCurrentLaunch(false);
 	ActiveSettings::SetSessionPersistentIdOverride(0);
+	// Drop any session-only passwords carried over from a previous launch in
+	// this Cemu run. Without this, entering the password once (without ticking
+	// "Save password") would keep HasUsablePasswordForLaunch() returning true
+	// for the rest of the session and the prompt would never reappear. The
+	// on-disk cache (saved passwords) is left alone.
+	Account::ClearAllSessionPasswords();
 
 	TitleInfo launchTitle{ launchPath };
 	if (launchTitle.IsValid())

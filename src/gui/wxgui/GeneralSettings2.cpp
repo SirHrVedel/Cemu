@@ -2528,10 +2528,6 @@ wxString GeneralSettings2::GetOnlineAccountErrorMessage(OnlineAccountError error
 	{
 		case OnlineAccountError::kNoAccountId:
 			return _("AccountId missing (The account is not connected to a NNID/PNID)");
-		case OnlineAccountError::kNoPasswordCached:
-			return _("IsPasswordCacheEnabled is set to false (The remember password option on your Wii U must be enabled for this account before dumping it)");
-		case OnlineAccountError::kPasswordCacheEmpty:
-			return _("AccountPasswordCache is empty (The remember password option on your Wii U must be enabled for this account before dumping it)");
 		case OnlineAccountError::kNoPrincipalId:
 			return _("PrincipalId missing");
 		default:

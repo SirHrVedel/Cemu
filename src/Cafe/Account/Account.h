@@ -8,8 +8,6 @@ enum class OnlineAccountError
 {
 	kNone,
 	kNoAccountId,
-	kNoPasswordCached,
-	kPasswordCacheEmpty,
 	kNoPrincipalId,
 };
 

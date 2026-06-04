@@ -254,19 +254,9 @@ OnlineAccountError Account::GetOnlineAccountError() const
 	if (m_account_id.empty())
 		return OnlineAccountError::kNoAccountId;
 
-	// IsPasswordCacheEnabled being off, or an all-zero cache, is no longer a
-	// hard error: the launch-time prompt collects a password when needed, and
-	// the user can also explicitly pick Offline Mode from that dialog. NAPI
-	// will surface a server-side auth failure if the cache truly is unusable.
-	// Don't pre-emptively force the account offline here.
-
-	/*if (m_simple_address_id == 0) not really needed
-		return false;*/
-
 	if (m_principal_id == 0)
 		return OnlineAccountError::kNoPrincipalId;
 
-	// TODO
 	return OnlineAccountError::kNone;
 }
 

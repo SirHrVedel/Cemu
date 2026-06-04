@@ -130,20 +130,20 @@ public:
 	static bool ClearPasswordCacheForAccount(uint32 persistent_id, bool persist);
 
 	// Flips m_password_cache_enabled (without touching the cache bytes) for the
-	// cached Account matching `persistent_id`. When `persist` is true the
-	// change is written back to account.dat, but only when the in-memory bytes
-	// originated from an on-disk save (i.e. m_session_password_filled is
-	// false). Session-only passwords (user declined "Save password") are never
-	// written by this function so that the game's nn_act::EnableAccountPasswordCache
-	// call cannot silently persist them. Returns false if no such account is
-	// loaded. Used by nn::act::EnableAccountPasswordCache.
+	// cached Account matching `persistent_id`. When `persist` is true the change
+	// is written to account.dat unless the bytes are session-only (user declined
+	// "Save password") — writing IsPasswordCacheEnabled=1 with session bytes
+	// would persist the wrong state to disk.
+	// Returns false if no such account is loaded.
+	// Used by nn::act::EnableAccountPasswordCache.
 	static bool SetPasswordCacheEnabledForAccount(uint32 persistent_id, bool enable, bool persist);
 
 	// Wipes every account's session-supplied password (the in-memory cache
 	// bytes filled when the user entered a password without ticking "Save
-	// password"). Called at the start of each FileLoad so the launch prompt
-	// reappears for every title launch when the user opted out of saving.
-	// On-disk caches (m_password_cache_enabled == 1) are left untouched.
+	// password"). Called at the start of each FileLoad so the prompt
+	// reappears on the next launch when the user opted out of saving.
+	// On-disk caches (accounts where m_session_password_filled is already
+	// false) are left completely untouched.
 	static void ClearAllSessionPasswords();
 
 	// this will always return at least one account (default one)

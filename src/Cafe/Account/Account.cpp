@@ -392,9 +392,14 @@ bool Account::SetPasswordCacheEnabledForAccount(uint32 persistent_id, bool enabl
 			// flag-only operation - disable then re-enable in the same session
 			// must restore a working cache. Wiping bytes is reserved for the
 			// Cemu GUI's "Remove password cache" action (ClearPasswordCacheForAccount).
-			if (enable)
-				acc.m_session_password_filled = false; // promote to on-disk cache
-			if (persist)
+			//
+			// Do NOT save when the in-memory bytes came from a session-only
+			// prompt (user declined "Save password"). The game's
+			// nn_act::EnableAccountPasswordCache call must not override that
+			// choice by writing IsPasswordCacheEnabled=1 + the session bytes to
+			// account.dat. The flag is updated in memory so nn::act callers
+			// see the correct value for the current session.
+			if (persist && !acc.m_session_password_filled)
 				(void)acc.Save();
 			return true;
 		}

@@ -550,7 +550,9 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 			// user isn't asked again every title launch within a session.
 			if (activeAccount.GetPrincipalId() != 0 && !activeAccount.HasUsablePasswordForLaunch())
 			{
-				const wxString miiName{ std::wstring(activeAccount.GetMiiName()) };
+				const wxString miiName = wxString::Format(
+					"%s (%x)", wxString{std::wstring(activeAccount.GetMiiName())},
+					activeAccount.GetPersistentId());
 				wxString serviceName;
 				switch (ActiveSettings::GetNetworkService())
 				{

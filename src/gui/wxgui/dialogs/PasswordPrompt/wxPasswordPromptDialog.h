@@ -3,11 +3,12 @@
 #include <wx/string.h>
 
 // Modal dialog shown before launching a title when the active account is an
-// online account but has IsPasswordCacheEnabled=0 in account.dat. The user
-// types the NNID password (max 16 chars to match the LoadConsoleAccount limit)
-// and optionally ticks the "Save password" checkbox to persist the hashed
-// cache to account.dat. When the box is unchecked the password lives only in
-// memory for this Cemu session.
+// online account with no usable cached password. The user types the NNID
+// password (max 16 chars to match the LoadConsoleAccount limit) and optionally
+// ticks the "Save password" checkbox to persist the hashed cache to
+// account.dat. When the box is unchecked the password lives only in memory for
+// this Cemu session. The `miiName` argument is shown verbatim in the prompt
+// description, so callers may append the persistent id as "(xxxxxxxx)".
 //
 // Return values from ShowModal():
 //   wxID_OK             - password entered, caller should verify+apply it

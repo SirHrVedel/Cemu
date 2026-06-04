@@ -360,10 +360,6 @@ void Account::ClearAllSessionPasswords()
 	{
 		if (!acc.m_session_password_filled)
 			continue;
-		// Only the session-supplied bytes get wiped. On-disk caches
-		// (m_password_cache_enabled == 1) are loaded from account.dat and
-		// must survive across launches; the session flag distinguishes the
-		// two cases, so checking it before touching the bytes is enough.
 		acc.m_account_password_cache.fill(0);
 		acc.m_session_password_filled = false;
 	}

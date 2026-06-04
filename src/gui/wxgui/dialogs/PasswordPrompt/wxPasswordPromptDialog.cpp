@@ -1,6 +1,9 @@
 #include "wxgui/dialogs/PasswordPrompt/wxPasswordPromptDialog.h"
 
+#include <wx/panel.h>
 #include <wx/sizer.h>
+#include <wx/statline.h>
+#include <wx/statbmp.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/checkbox.h>
@@ -8,65 +11,72 @@
 #include <wx/msgdlg.h>
 #include <wx/settings.h>
 
+
 wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiName, wxString serviceName,
-                                               bool showIncorrectPasswordError)
+                                               std::function<bool(const std::string&)> verifier, wxBitmap miiIcon)
 	: wxDialog(parent, wxID_ANY, _("Enter account password"))
+	, m_verifier(std::move(verifier))
 {
 	auto* main_sizer = new wxBoxSizer(wxVERTICAL);
 
-	wxString description = wxString::Format(_("Please enter the password for %s"), miiName);
-	auto* desc = new wxStaticText(this, wxID_ANY, description);
-	desc->Wrap(420);
-	main_sizer->Add(desc, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
+	// Top row: description, service name, and password field on the left;
+	// Mii face icon on the right. text_col expands vertically to match the
+	// icon height so the stretch spacer pushes the password field down.
+	auto* top_row = new wxBoxSizer(wxHORIZONTAL);
+	auto* text_col = new wxBoxSizer(wxVERTICAL);
+
+	const int wrapWidth = miiIcon.IsOk() ? 280 : 420;
+	auto* desc = new wxStaticText(this, wxID_ANY,
+		wxString::Format(_("Please enter the password for %s"), miiName));
+	desc->Wrap(wrapWidth);
+	text_col->Add(desc, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
 
 	if (!serviceName.IsEmpty())
 	{
-		wxString connectingText = wxString::Format(_("Connecting to %s"), serviceName);
-		auto* connecting = new wxStaticText(this, wxID_ANY, connectingText);
+		auto* connecting = new wxStaticText(this, wxID_ANY,
+			wxString::Format(_("Connecting to %s"), serviceName));
 		wxFont font = connecting->GetFont();
 		font.SetPointSize(std::max(6, font.GetPointSize() - 1));
 		connecting->SetFont(font);
 		connecting->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
-		main_sizer->Add(connecting, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
-	}
-	else
-	{
-		main_sizer->AddSpacer(4);
+		text_col->Add(connecting, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
 	}
 
-	// Inline themed error banner shown on a retry after a failed verification.
-	// Replaces the previous native wxMessageBox so it respects the dark-mode
-	// styling of the parent window.
-	if (showIncorrectPasswordError)
-	{
-		auto* err = new wxStaticText(this, wxID_ANY, _("Incorrect password. Please try again."));
-		wxFont errFont = err->GetFont();
-		errFont.SetWeight(wxFONTWEIGHT_BOLD);
-		err->SetFont(errFont);
-		// Soft red that reads well on both light and dark backgrounds.
-		err->SetForegroundColour(wxColour(220, 64, 64));
-		main_sizer->Add(err, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
-	}
+	// Fills the gap between the text above and the password field below so
+	// the field sits at the bottom of the Mii image when the icon is present.
+	text_col->AddStretchSpacer(1);
 
-	auto* row = new wxFlexGridSizer(0, 3, 0, 0);
-	row->AddGrowableCol(1);
-
-	row->Add(new wxStaticText(this, wxID_ANY, _("Password")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-	m_password = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(240, -1), wxTE_PASSWORD | wxTE_PROCESS_ENTER);
+	auto* pw_row = new wxBoxSizer(wxHORIZONTAL);
+	pw_row->Add(new wxStaticText(this, wxID_ANY, _("Password")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 5);
+	m_password = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD | wxTE_PROCESS_ENTER);
 	m_password->SetMaxLength(16); // matches LoadConsoleAccount's 16-char cap
 	m_password->SetFocus();
 	m_password->Bind(wxEVT_TEXT_ENTER, &wxPasswordPromptDialog::OnOK, this);
-	row->Add(m_password, 1, wxALL | wxEXPAND, 5);
+	pw_row->Add(m_password, 1, wxEXPAND);
+	text_col->Add(pw_row, 0, wxALL | wxEXPAND, 8);
 
-	// "?" help button to the right of the password field. wxWidgets can't
-	// portably add buttons to the OS title bar, so this is the most prominent
-	// in-dialog placement adjacent to the field the prompt is about.
-	m_help_button = new wxButton(this, wxID_ANY, "?", wxDefaultPosition, wxSize(28, 28));
-	m_help_button->SetToolTip(_("Why am I seeing this prompt?"));
-	m_help_button->Bind(wxEVT_BUTTON, &wxPasswordPromptDialog::OnShowHelp, this);
-	row->Add(m_help_button, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+	top_row->Add(text_col, 1, wxEXPAND);
 
-	main_sizer->Add(row, 0, wxEXPAND);
+	if (miiIcon.IsOk())
+	{
+		// Outer panel provides the border ring; inner panel matches the dialog
+		// background so transparent Mii pixels don't show the border colour.
+		auto* borderPanel = new wxPanel(this, wxID_ANY);
+		borderPanel->SetBackgroundColour(wxColour(140, 140, 140));
+		auto* borderSizer = new wxBoxSizer(wxHORIZONTAL);
+		auto* bgPanel = new wxPanel(borderPanel, wxID_ANY);
+		bgPanel->SetBackgroundColour(GetBackgroundColour());
+		auto* bgSizer = new wxBoxSizer(wxHORIZONTAL);
+		bgSizer->Add(new wxStaticBitmap(bgPanel, wxID_ANY, miiIcon), 0);
+		bgPanel->SetSizer(bgSizer);
+		bgPanel->Fit();
+		borderSizer->Add(bgPanel, 0, wxALL, 1);
+		borderPanel->SetSizer(borderSizer);
+		borderPanel->Fit();
+		top_row->Add(borderPanel, 0, wxALL | wxALIGN_BOTTOM, 6);
+	}
+
+	main_sizer->Add(top_row, 0, wxEXPAND);
 
 	m_show_password = new wxCheckBox(this, wxID_ANY, _("Show password"));
 	m_show_password->SetValue(false);
@@ -97,10 +107,12 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	m_cancel_button->Bind(wxEVT_BUTTON, &wxPasswordPromptDialog::OnCancel, this);
 	button_sizer->Add(m_cancel_button, 0, wxALL, 5);
 
-	main_sizer->Add(button_sizer, 0, wxEXPAND);
+	main_sizer->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
+	main_sizer->Add(button_sizer, 0, wxEXPAND | wxALL, 4);
 
 	this->SetSizerAndFit(main_sizer);
 	this->wxWindowBase::Layout();
+	CentreOnParent();
 }
 
 wxString wxPasswordPromptDialog::GetPassword() const
@@ -117,6 +129,18 @@ void wxPasswordPromptDialog::OnOK(wxCommandEvent& event)
 {
 	if (m_password->IsEmpty())
 		return; // require some input before accepting; field already focused
+
+	if (m_verifier)
+	{
+		const std::string plaintext = m_password->GetValue().utf8_string();
+		if (!m_verifier(plaintext))
+		{
+			wxMessageBox(_("Incorrect password. Please try again."),
+			             _("Incorrect password"), wxOK | wxICON_ERROR, this);
+			return; // keep dialog open; typed text is preserved
+		}
+	}
+
 	EndModal(wxID_OK);
 }
 
@@ -130,39 +154,7 @@ void wxPasswordPromptDialog::OnLaunchOffline(wxCommandEvent& event)
 	EndModal(ID_LaunchOffline);
 }
 
-void wxPasswordPromptDialog::OnShowHelp(wxCommandEvent& event)
-{
-	// Themed wxDialog rather than a native wxMessageBox so the explanation
-	// inherits the same dark-mode treatment as the rest of the password flow.
-	wxDialog dlg(this, wxID_ANY, _("Why am I seeing this prompt?"));
-	auto* sizer = new wxBoxSizer(wxVERTICAL);
 
-	const wxString text = _(
-		"This account hasn't saved the password. As a result you'll have to "
-		"enter your password to access online features.\n\n"
-		"After entering your password you'll have the option to save it via "
-		"the check box, so you will not need to enter it again in the future.\n\n"
-		"You'll have the ability to delete the password in the account "
-		"settings in General Settings if you regret saving it.\n\n"
-		"You can also just launch the account without the password by pressing "
-		"the \"Offline Mode\" button, at the cost of not getting access to "
-		"online features.");
-
-	auto* body = new wxStaticText(&dlg, wxID_ANY, text);
-	body->Wrap(440);
-	sizer->Add(body, 1, wxALL | wxEXPAND, 12);
-
-	auto* button_row = new wxBoxSizer(wxHORIZONTAL);
-	button_row->AddStretchSpacer(1);
-	auto* ok = new wxButton(&dlg, wxID_OK, _("OK"));
-	ok->SetDefault();
-	button_row->Add(ok, 0, wxALL, 6);
-	sizer->Add(button_row, 0, wxEXPAND);
-
-	dlg.SetSizerAndFit(sizer);
-	dlg.CentreOnParent();
-	dlg.ShowModal();
-}
 
 void wxPasswordPromptDialog::OnToggleShowPassword(wxCommandEvent& event)
 {

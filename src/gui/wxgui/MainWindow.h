@@ -102,6 +102,7 @@ public:
 	void OnNFCMenu(wxCommandEvent& event);
 	void OnOptionsInput(wxCommandEvent& event);
 	void OnAccountSelect(wxCommandEvent& event);
+	void OnAccountMenuHighlight(wxMenuEvent& event);
 	void OnConsoleLanguage(wxCommandEvent& event);
 	void OnHelpAbout(wxCommandEvent& event);
 	void OnHelpUpdate(wxCommandEvent& event);
@@ -219,6 +220,7 @@ private:
 
 	// options
 	wxMenu* m_optionsAccountMenu{};
+	wxWindow* m_mii_menu_tooltip = nullptr;
 
 	wxMenuItem* m_fullscreenMenuItem{};
 	wxMenuItem* m_padViewMenuItem{};

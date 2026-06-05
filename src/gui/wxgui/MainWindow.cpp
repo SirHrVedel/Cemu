@@ -48,6 +48,8 @@
 #include "wxgui/GettingStartedDialog.h"
 #include "wxgui/helpers/wxHelpers.h"
 #include "wxgui/input/InputSettings2.h"
+#include <wx/popupwin.h>
+#include <wx/statbmp.h>
 #include "wxgui/input/HotkeySettings.h"
 #include "input/InputManager.h"
 
@@ -381,6 +383,7 @@ MainWindow::MainWindow()
 
 	Bind(wxEVT_OPEN_GRAPHIC_PACK, &MainWindow::OnGraphicWindowOpen, this);
 	Bind(wxEVT_LAUNCH_GAME, &MainWindow::OnLaunchFromFile, this);
+	Bind(wxEVT_MENU_HIGHLIGHT, &MainWindow::OnAccountMenuHighlight, this);
 
 	if (LaunchSettings::GDBStubEnabled())
 	{
@@ -1036,6 +1039,71 @@ void MainWindow::OnAccountSelect(wxCommandEvent& event)
 	config.account.m_persistent_id = accounts[index].GetPersistentId();
 	// config.account.online_enabled.value = false; // reset online for safety
 	GetConfigHandle().Save();
+}
+
+void MainWindow::OnAccountMenuHighlight(wxMenuEvent& event)
+{
+	// Hide before Destroy so the old popup isn't under the cursor when we
+	// call WindowFromPoint below to locate the menu's right edge.
+	if (m_mii_menu_tooltip)
+	{
+		m_mii_menu_tooltip->Hide();
+		m_mii_menu_tooltip->Destroy();
+		m_mii_menu_tooltip = nullptr;
+	}
+
+	const int idx = event.GetId() - MAINFRAME_MENU_ID_OPTIONS_ACCOUNT_1;
+	const auto& accounts = Account::GetAccounts();
+	if (idx >= 0 && idx < (int)accounts.size())
+	{
+		const wxBitmap mii = wxLoadMiiImage(accounts[idx].GetPersistentId(), 64, /*placeholder=*/false);
+		if (!mii.IsOk())
+		{
+			event.Skip();
+			return;
+		}
+
+		// Build the same bordered panel used by the password dialog.
+		auto* tip = new wxPopupWindow(this);
+		auto* borderPanel = new wxPanel(tip, wxID_ANY);
+		borderPanel->SetBackgroundColour(wxColour(140, 140, 140));
+		auto* borderSizer = new wxBoxSizer(wxHORIZONTAL);
+		auto* bgPanel = new wxPanel(borderPanel, wxID_ANY);
+		bgPanel->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNFACE));
+		auto* bgSizer = new wxBoxSizer(wxHORIZONTAL);
+		bgSizer->Add(new wxStaticBitmap(bgPanel, wxID_ANY, mii), 0);
+		bgPanel->SetSizer(bgSizer);
+		bgPanel->Fit();
+		borderSizer->Add(bgPanel, 0, wxALL, 1);
+		borderPanel->SetSizer(borderSizer);
+		borderPanel->Fit();
+		auto* outerSizer = new wxBoxSizer(wxHORIZONTAL);
+		outerSizer->Add(borderPanel, 0);
+		tip->SetSizer(outerSizer);
+		tip->Fit();
+
+		// Place the tooltip to the right of the menu window so it never
+		// overlaps the items. On Windows we can get the exact right edge of
+		// the menu window from WindowFromPoint; elsewhere fall back to a
+		// generous cursor offset.
+		wxPoint pos = wxGetMousePosition() + wxPoint(16, -32);
+#if BOOST_OS_WINDOWS
+		POINT cursorPos;
+		GetCursorPos(&cursorPos);
+		if (const HWND menuHwnd = WindowFromPoint(cursorPos))
+		{
+			RECT r{};
+			GetWindowRect(menuHwnd, &r);
+			// Vertically centre the 66 px bordered image on the cursor row.
+			pos = wxPoint(r.right + 4, cursorPos.y - 33);
+		}
+#endif
+		tip->SetPosition(pos);
+		tip->Show();
+		m_mii_menu_tooltip = tip;
+	}
+
+	event.Skip();
 }
 
 void MainWindow::OnConsoleLanguage(wxCommandEvent& event)

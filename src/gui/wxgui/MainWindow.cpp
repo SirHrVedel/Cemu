@@ -561,33 +561,27 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 				case NetworkService::Custom:   serviceName = _("custom network service"); break;
 				default: break; // Offline or unknown - shown line is suppressed inside the dialog
 				}
-				bool showError = false;
-				while (true)
+				auto verifier = [&](const std::string& pw) {
+					return activeAccount.VerifyPlaintextPassword(pw);
+				};
+				wxPasswordPromptDialog dlg(this, miiName, serviceName, verifier, activeAccount.GetPersistentId());
+				const int result = dlg.ShowModal();
+				if (result == wxID_CANCEL)
 				{
-					wxPasswordPromptDialog dlg(this, miiName, serviceName, showError);
-					const int result = dlg.ShowModal();
-					if (result == wxID_CANCEL)
-					{
-						return false; // user dismissed -> abort launch
-					}
-					if (result == wxPasswordPromptDialog::ID_LaunchOffline)
-					{
-						// User chose offline mode for this session. Settings on
-						// disk stay untouched; the override is cleared at the
-						// start of every FileLoad.
-						ActiveSettings::SetForceOfflineForCurrentLaunch(true);
-						break;
-					}
-					// result == wxID_OK
-					const std::string plaintext = dlg.GetPassword().utf8_string();
-					if (!activeAccount.VerifyPlaintextPassword(plaintext))
-					{
-						showError = true;
-						continue; // re-prompt with themed inline error label
-					}
+					return false; // user dismissed -> abort launch
+				}
+				if (result == wxPasswordPromptDialog::ID_LaunchOffline)
+				{
+					// User chose offline mode for this session. Settings on
+					// disk stay untouched; the override is cleared at the
+					// start of every FileLoad.
+					ActiveSettings::SetForceOfflineForCurrentLaunch(true);
+				}
+				else
+				{
+					// result == wxID_OK: password was already verified inside the dialog
 					Account::ApplyPasswordToAccount(activeAccount.GetPersistentId(),
-						plaintext, dlg.ShouldSavePassword());
-					break;
+						dlg.GetPassword().utf8_string(), dlg.ShouldSavePassword());
 				}
 			}
 		}

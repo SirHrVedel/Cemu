@@ -13,6 +13,7 @@ class wxRadioBox;
 class wxSlider;
 class wxSpinCtrl;
 class wxSpinCtrlDouble;
+class wxStaticBitmap;
 class wxStaticText;
 
 wxDECLARE_EVENT(wxEVT_ACCOUNTLIST_REFRESH, wxCommandEvent);
@@ -92,6 +93,7 @@ private:
 	// Account
 	wxButton* m_create_account, * m_delete_account, * m_remove_password_cache = nullptr;
 	wxChoice* m_active_account;
+	wxStaticBitmap* m_mii_icon = nullptr;
 	wxRadioBox* m_active_service;
 	wxCollapsiblePane* m_account_information;
 	wxPropertyGrid* m_account_grid;

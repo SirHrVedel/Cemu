@@ -10,6 +10,7 @@
 
 #include <wx/collpane.h>
 #include <wx/clrpicker.h>
+#include <wx/statbmp.h>
 #include <wx/cshelp.h>
 #include <wx/textctrl.h>
 #include <wx/textdlg.h>
@@ -902,7 +903,29 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		m_remove_password_cache->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountRemovePasswordCache, this);
 		m_remove_password_cache->Enable(false); // gated by UpdateAccountInformation()
 
-		box_sizer->Add(content, 1, wxEXPAND, 5);
+		// Mii face icon with the same border ring used by the password prompt.
+		// The outer panel is the grey ring; the inner panel matches the dialog
+		// background so transparent pixels in the Mii image don't show the ring
+		// colour. Both are loaded/updated in UpdateAccountInformation().
+		auto* mii_border_panel = new wxPanel(box, wxID_ANY);
+		mii_border_panel->SetBackgroundColour(wxColour(140, 140, 140));
+		auto* mii_border_sizer = new wxBoxSizer(wxHORIZONTAL);
+		auto* mii_bg_panel = new wxPanel(mii_border_panel, wxID_ANY);
+		mii_bg_panel->SetBackgroundColour(GetBackgroundColour());
+		auto* mii_bg_sizer = new wxBoxSizer(wxHORIZONTAL);
+		m_mii_icon = new wxStaticBitmap(mii_bg_panel, wxID_ANY, wxNullBitmap,
+		                                wxDefaultPosition, wxSize(64, 64));
+		mii_bg_sizer->Add(m_mii_icon, 0);
+		mii_bg_panel->SetSizer(mii_bg_sizer);
+		mii_bg_panel->Fit();
+		mii_border_sizer->Add(mii_bg_panel, 0, wxALL, 1);
+		mii_border_panel->SetSizer(mii_border_sizer);
+		mii_border_panel->Fit();
+
+		auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
+		row_sizer->Add(content, 1, wxEXPAND);
+		row_sizer->Add(mii_border_panel, 0, wxALL | wxALIGN_TOP, 5);
+		box_sizer->Add(row_sizer, 1, wxEXPAND, 5);
 
 		online_panel_sizer->Add(box_sizer, 0, wxEXPAND | wxALL, 5);
 
@@ -1763,6 +1786,10 @@ void GeneralSettings2::UpdateAccountInformation()
 		                       !CafeSystem::IsTitleRunning();
 		m_remove_password_cache->Enable(can_clear);
 	}
+
+	// Load Mii face icon for the selected account.
+	if (m_mii_icon)
+		m_mii_icon->SetBitmap(wxLoadMiiImage(account.GetPersistentId()));
 
 	// refresh pane size
 	m_account_grid->InvalidateBestSize();

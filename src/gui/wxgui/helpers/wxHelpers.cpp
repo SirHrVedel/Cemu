@@ -102,16 +102,16 @@ static wxBitmap wxMakeMiiPlaceholder(int size)
 	return bmp;
 }
 
-wxBitmap wxLoadMiiImage(uint32 persistentId, int size)
+wxBitmap wxLoadMiiImage(uint32 persistentId, int size, bool placeholder)
 {
 	const fs::path imgPath = ActiveSettings::GetMlcPath(
 		fmt::format("usr/save/system/act/{:08x}/miiimg00.dat", persistentId));
 	std::error_code ec;
 	if (!fs::exists(imgPath, ec) || ec)
-		return wxMakeMiiPlaceholder(size);
+		return placeholder ? wxMakeMiiPlaceholder(size) : wxNullBitmap;
 	wxImage img;
 	if (!img.LoadFile(wxString::FromUTF8(_pathToUtf8(imgPath))))
-		return wxMakeMiiPlaceholder(size);
+		return placeholder ? wxMakeMiiPlaceholder(size) : wxNullBitmap;
 	img.Rescale(size, size, wxIMAGE_QUALITY_HIGH);
 	return wxBitmap(img);
 }

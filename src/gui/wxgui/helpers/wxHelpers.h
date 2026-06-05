@@ -76,9 +76,12 @@ void wxAutosizeColumns(wxListCtrlBase* ctrl, int col_start, int col_end);
 
 // Loads the Mii face image (miiimg00.dat) for the given persistent id from
 // the MLC storage and returns it scaled to `size` × `size` pixels.
-// Returns wxNullBitmap if the file doesn't exist or fails to load.
+// When `placeholder` is true (default) and the file is missing or unreadable,
+// a same-sized bitmap with a centred "?" is returned so callers always get a
+// valid bitmap. Pass `placeholder = false` to get wxNullBitmap on failure
+// instead, which lets callers decide whether to show anything at all.
 #include <wx/bitmap.h>
-wxBitmap wxLoadMiiImage(uint32 persistentId, int size = 64);
+wxBitmap wxLoadMiiImage(uint32 persistentId, int size = 64, bool placeholder = true);
 
 template <typename T>
 T get_next_sibling(const T element)

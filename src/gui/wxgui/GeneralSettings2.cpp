@@ -871,6 +871,26 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		auto* box = new wxStaticBox(online_panel, wxID_ANY, _("Account settings"));
 		auto* box_sizer = new wxStaticBoxSizer(box, wxVERTICAL);
 
+		// Mii face icon with the same border ring used by the password prompt.
+		// Outer panel = grey ring; inner panel = dialog background so transparent
+		// Mii pixels don't expose the ring colour.
+		auto* mii_border_panel = new wxPanel(box, wxID_ANY);
+		mii_border_panel->SetBackgroundColour(wxColour(140, 140, 140));
+		auto* mii_border_sizer = new wxBoxSizer(wxHORIZONTAL);
+		auto* mii_bg_panel = new wxPanel(mii_border_panel, wxID_ANY);
+		mii_bg_panel->SetBackgroundColour(GetBackgroundColour());
+		auto* mii_bg_sizer = new wxBoxSizer(wxHORIZONTAL);
+		m_mii_icon = new wxStaticBitmap(mii_bg_panel, wxID_ANY, wxNullBitmap,
+		                                wxDefaultPosition, wxSize(64, 64));
+		mii_bg_sizer->Add(m_mii_icon, 0);
+		mii_bg_panel->SetSizer(mii_bg_sizer);
+		mii_bg_panel->Fit();
+		mii_border_sizer->Add(mii_bg_panel, 0, wxALL, 1);
+		mii_border_panel->SetSizer(mii_border_sizer);
+		mii_border_panel->Fit();
+
+		// Account controls in the original 4-column grid, independent of the
+		// Mii image so button sizes are unaffected by the image width.
 		auto* content = new wxFlexGridSizer(0, 4, 0, 0);
 		content->SetFlexibleDirection(wxBOTH);
 		content->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
@@ -903,29 +923,11 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		m_remove_password_cache->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountRemovePasswordCache, this);
 		m_remove_password_cache->Enable(false); // gated by UpdateAccountInformation()
 
-		// Mii face icon with the same border ring used by the password prompt.
-		// The outer panel is the grey ring; the inner panel matches the dialog
-		// background so transparent pixels in the Mii image don't show the ring
-		// colour. Both are loaded/updated in UpdateAccountInformation().
-		auto* mii_border_panel = new wxPanel(box, wxID_ANY);
-		mii_border_panel->SetBackgroundColour(wxColour(140, 140, 140));
-		auto* mii_border_sizer = new wxBoxSizer(wxHORIZONTAL);
-		auto* mii_bg_panel = new wxPanel(mii_border_panel, wxID_ANY);
-		mii_bg_panel->SetBackgroundColour(GetBackgroundColour());
-		auto* mii_bg_sizer = new wxBoxSizer(wxHORIZONTAL);
-		m_mii_icon = new wxStaticBitmap(mii_bg_panel, wxID_ANY, wxNullBitmap,
-		                                wxDefaultPosition, wxSize(64, 64));
-		mii_bg_sizer->Add(m_mii_icon, 0);
-		mii_bg_panel->SetSizer(mii_bg_sizer);
-		mii_bg_panel->Fit();
-		mii_border_sizer->Add(mii_bg_panel, 0, wxALL, 1);
-		mii_border_panel->SetSizer(mii_border_sizer);
-		mii_border_panel->Fit();
-
+		// Mii on the far left, account controls to the right.
 		auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
+		row_sizer->Add(mii_border_panel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
 		row_sizer->Add(content, 1, wxEXPAND);
-		row_sizer->Add(mii_border_panel, 0, wxALL | wxALIGN_TOP, 5);
-		box_sizer->Add(row_sizer, 1, wxEXPAND, 5);
+		box_sizer->Add(row_sizer, 0, wxEXPAND);
 
 		online_panel_sizer->Add(box_sizer, 0, wxEXPAND | wxALL, 5);
 

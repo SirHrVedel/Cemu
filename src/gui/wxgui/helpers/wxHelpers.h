@@ -74,6 +74,12 @@ private:
 void wxAutosizeColumn(wxListCtrlBase* ctrl, int col);
 void wxAutosizeColumns(wxListCtrlBase* ctrl, int col_start, int col_end);
 
+// Loads the Mii face image (miiimg00.dat) for the given persistent id from
+// the MLC storage and returns it scaled to `size` × `size` pixels.
+// Returns wxNullBitmap if the file doesn't exist or fails to load.
+#include <wx/bitmap.h>
+wxBitmap wxLoadMiiImage(uint32 persistentId, int size = 64);
+
 template <typename T>
 T get_next_sibling(const T element)
 {

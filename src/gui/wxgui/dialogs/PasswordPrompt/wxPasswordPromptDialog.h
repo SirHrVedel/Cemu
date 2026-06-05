@@ -1,7 +1,6 @@
 #pragma once
 #include <functional>
 #include <string>
-#include <wx/bitmap.h>
 #include <wx/dialog.h>
 #include <wx/string.h>
 
@@ -29,7 +28,7 @@ public:
 
 	wxPasswordPromptDialog(wxWindow* parent, wxString miiName, wxString serviceName,
 	                       std::function<bool(const std::string&)> verifier = nullptr,
-	                       wxBitmap miiIcon = wxNullBitmap);
+	                       uint32 persistentId = 0);
 
 	[[nodiscard]] wxString GetPassword() const;
 	[[nodiscard]] bool ShouldSavePassword() const;

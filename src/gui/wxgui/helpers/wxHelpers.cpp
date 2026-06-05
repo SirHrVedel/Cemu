@@ -1,9 +1,15 @@
 #include "wxgui/helpers/wxHelpers.h"
 
+#include <wx/image.h>
+#include <wx/dcmemory.h>
+#include <wx/settings.h>
 #include <wx/wupdlock.h>
 #include <wx/stattext.h>
 #include <wx/slider.h>
 #include <wx/dirdlg.h>
+
+#include "config/ActiveSettings.h"
+#include "util/helpers/helpers.h"
 
 #if BOOST_OS_LINUX || BOOST_OS_BSD
 #include <gtk/gtk.h>
@@ -73,6 +79,41 @@ uint32 fix_raw_keycode(uint32 keycode, uint32 raw_flags)
 #endif
 
 	return keycode;
+}
+
+// Returns a `size x size` bitmap with a centred "?" drawn in the system grey-
+// text colour on the dialog background. Used as the fallback when no Mii image
+// is available so callers always receive a valid, correctly-sized bitmap.
+static wxBitmap wxMakeMiiPlaceholder(int size)
+{
+	wxBitmap bmp(size, size);
+	wxMemoryDC dc(bmp);
+	dc.SetBackground(wxBrush(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNFACE)));
+	dc.Clear();
+	wxFont font = dc.GetFont();
+	font.SetPointSize(std::max(8, size * 7 / 16)); // ~28 pt at the default 64 px
+	font.SetWeight(wxFONTWEIGHT_BOLD);
+	dc.SetFont(font);
+	dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
+	const wxString label = wxT("?");
+	wxCoord tw, th;
+	dc.GetTextExtent(label, &tw, &th);
+	dc.DrawText(label, (size - tw) / 2, (size - th) / 2);
+	return bmp;
+}
+
+wxBitmap wxLoadMiiImage(uint32 persistentId, int size)
+{
+	const fs::path imgPath = ActiveSettings::GetMlcPath(
+		fmt::format("usr/save/system/act/{:08x}/miiimg00.dat", persistentId));
+	std::error_code ec;
+	if (!fs::exists(imgPath, ec) || ec)
+		return wxMakeMiiPlaceholder(size);
+	wxImage img;
+	if (!img.LoadFile(wxString::FromUTF8(_pathToUtf8(imgPath))))
+		return wxMakeMiiPlaceholder(size);
+	img.Rescale(size, size, wxIMAGE_QUALITY_HIGH);
+	return wxBitmap(img);
 }
 
 WindowSystem::WindowHandleInfo initHandleContextFromWxWidgetsWindow(wxWindow* wxw)

@@ -1,4 +1,5 @@
 #include "wxgui/dialogs/PasswordPrompt/wxPasswordPromptDialog.h"
+#include "wxgui/helpers/wxHelpers.h"
 
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -13,10 +14,11 @@
 
 
 wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiName, wxString serviceName,
-                                               std::function<bool(const std::string&)> verifier, wxBitmap miiIcon)
+                                               std::function<bool(const std::string&)> verifier, uint32 persistentId)
 	: wxDialog(parent, wxID_ANY, _("Enter account password"))
 	, m_verifier(std::move(verifier))
 {
+	const wxBitmap miiIcon = wxLoadMiiImage(persistentId);
 	auto* main_sizer = new wxBoxSizer(wxVERTICAL);
 
 	// Top row: description, service name, and password field on the left;
@@ -25,7 +27,7 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	auto* top_row = new wxBoxSizer(wxHORIZONTAL);
 	auto* text_col = new wxBoxSizer(wxVERTICAL);
 
-	const int wrapWidth = miiIcon.IsOk() ? 280 : 420;
+	const int wrapWidth = 280; // icon area is always shown
 	auto* desc = new wxStaticText(this, wxID_ANY,
 		wxString::Format(_("Please enter the password for %s"), miiName));
 	desc->Wrap(wrapWidth);
@@ -57,10 +59,10 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	top_row->Add(text_col, 1, wxEXPAND);
 
-	if (miiIcon.IsOk())
+	// Outer panel provides the border ring; inner panel matches the dialog
+	// background so transparent Mii pixels don't show the border colour.
+	// wxLoadMiiImage always returns a valid bitmap (real image or "?" placeholder).
 	{
-		// Outer panel provides the border ring; inner panel matches the dialog
-		// background so transparent Mii pixels don't show the border colour.
 		auto* borderPanel = new wxPanel(this, wxID_ANY);
 		borderPanel->SetBackgroundColour(wxColour(140, 140, 140));
 		auto* borderSizer = new wxBoxSizer(wxHORIZONTAL);

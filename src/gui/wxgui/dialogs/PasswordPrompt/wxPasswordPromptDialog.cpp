@@ -22,20 +22,15 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	const wxBitmap miiIcon = wxLoadMiiImage(persistentId);
 	auto* main_sizer = new wxBoxSizer(wxVERTICAL);
 
-	// Top row: description and password field on the left; Mii icon on the right.
-	// The stretch spacer pushes the password field to the bottom of the Mii image
-	// so the two are vertically aligned.
 	auto* top_row = new wxBoxSizer(wxHORIZONTAL);
 	auto* text_col = new wxBoxSizer(wxVERTICAL);
 
-	const int wrapWidth = 280; // icon area is always shown
+	const int wrapWidth = 280; 
 	auto* desc = new wxStaticText(this, wxID_ANY,
 		wxString::Format(_("Please enter the password for %s"), miiName));
 	desc->Wrap(wrapWidth);
 	text_col->Add(desc, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
 
-	// Fills the gap between the text above and the password field below so
-	// the field sits at the bottom of the Mii image.
 	text_col->AddStretchSpacer(1);
 
 	auto* pw_row = new wxBoxSizer(wxHORIZONTAL);
@@ -49,10 +44,6 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	top_row->Add(text_col, 1, wxEXPAND);
 
-	// Outer panel provides the border ring; inner panel matches the dialog
-	// background so transparent Mii pixels don't show the border colour.
-	// Vertically centred so the row height is driven purely by content, not
-	// by pushing the icon to the bottom of an artificially tall column.
 	{
 		auto* borderPanel = new wxPanel(this, wxID_ANY);
 		borderPanel->SetBackgroundColour(wxColour(140, 140, 140));
@@ -71,7 +62,6 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	main_sizer->Add(top_row, 0, wxEXPAND);
 
-	// Checkboxes on the left; "Connecting to …" fills the empty space on the right.
 	auto* middle_row = new wxBoxSizer(wxHORIZONTAL);
 	auto* checks_col = new wxBoxSizer(wxVERTICAL);
 
@@ -79,7 +69,7 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	m_show_password->SetValue(false);
 	m_show_password->Bind(wxEVT_CHECKBOX, &wxPasswordPromptDialog::OnToggleShowPassword, this);
 	checks_col->Add(m_show_password, 0, wxLEFT | wxRIGHT | wxTOP, 8);
-	checks_col->AddSpacer(4); // equal outer margins → geometric centre = visual midpoint
+	checks_col->AddSpacer(4);
 
 	m_save_password = new wxCheckBox(this, wxID_ANY, _("Save password"));
 	m_save_password->SetValue(false);
@@ -114,9 +104,6 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	auto* button_sizer = new wxBoxSizer(wxHORIZONTAL);
 
-	// "Launch offline" sits on the left, visually separated from the primary
-	// OK/Cancel pair on the right. This is the themed replacement for the
-	// previous wxMessageBox "Launch in offline mode?" prompt.
 	m_offline_button = new wxButton(this, wxID_ANY, _("Offline Mode"));
 	m_offline_button->SetToolTip(_("Skip account password and temporarily launch in offline mode"));
 	m_offline_button->Bind(wxEVT_BUTTON, &wxPasswordPromptDialog::OnLaunchOffline, this);
@@ -153,7 +140,7 @@ bool wxPasswordPromptDialog::ShouldSavePassword() const
 void wxPasswordPromptDialog::OnOK(wxCommandEvent& event)
 {
 	if (m_password->IsEmpty())
-		return; // require some input before accepting; field already focused
+		return;
 
 	if (m_verifier)
 	{
@@ -162,7 +149,7 @@ void wxPasswordPromptDialog::OnOK(wxCommandEvent& event)
 		{
 			wxMessageBox(_("Incorrect password. Please try again."),
 			             _("Incorrect password"), wxOK | wxICON_ERROR, this);
-			return; // keep dialog open; typed text is preserved
+			return;
 		}
 	}
 

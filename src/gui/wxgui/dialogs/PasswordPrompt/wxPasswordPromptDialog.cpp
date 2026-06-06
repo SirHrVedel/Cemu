@@ -14,16 +14,17 @@
 
 
 wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiName, wxString serviceName,
-                                               std::function<bool(const std::string&)> verifier, uint32 persistentId)
+                                               wxColour serviceColour, std::function<bool(const std::string&)> verifier,
+                                               uint32 persistentId)
 	: wxDialog(parent, wxID_ANY, _("Enter account password"))
 	, m_verifier(std::move(verifier))
 {
 	const wxBitmap miiIcon = wxLoadMiiImage(persistentId);
 	auto* main_sizer = new wxBoxSizer(wxVERTICAL);
 
-	// Top row: description, service name, and password field on the left;
-	// Mii face icon on the right. text_col expands vertically to match the
-	// icon height so the stretch spacer pushes the password field down.
+	// Top row: description and password field on the left; Mii icon on the right.
+	// The stretch spacer pushes the password field to the bottom of the Mii image
+	// so the two are vertically aligned.
 	auto* top_row = new wxBoxSizer(wxHORIZONTAL);
 	auto* text_col = new wxBoxSizer(wxVERTICAL);
 
@@ -33,19 +34,8 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	desc->Wrap(wrapWidth);
 	text_col->Add(desc, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
 
-	if (!serviceName.IsEmpty())
-	{
-		auto* connecting = new wxStaticText(this, wxID_ANY,
-			wxString::Format(_("Connecting to %s"), serviceName));
-		wxFont font = connecting->GetFont();
-		font.SetPointSize(std::max(6, font.GetPointSize() - 1));
-		connecting->SetFont(font);
-		connecting->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
-		text_col->Add(connecting, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
-	}
-
 	// Fills the gap between the text above and the password field below so
-	// the field sits at the bottom of the Mii image when the icon is present.
+	// the field sits at the bottom of the Mii image.
 	text_col->AddStretchSpacer(1);
 
 	auto* pw_row = new wxBoxSizer(wxHORIZONTAL);
@@ -61,7 +51,8 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	// Outer panel provides the border ring; inner panel matches the dialog
 	// background so transparent Mii pixels don't show the border colour.
-	// wxLoadMiiImage always returns a valid bitmap (real image or "?" placeholder).
+	// Vertically centred so the row height is driven purely by content, not
+	// by pushing the icon to the bottom of an artificially tall column.
 	{
 		auto* borderPanel = new wxPanel(this, wxID_ANY);
 		borderPanel->SetBackgroundColour(wxColour(140, 140, 140));
@@ -80,14 +71,46 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 
 	main_sizer->Add(top_row, 0, wxEXPAND);
 
+	// Checkboxes on the left; "Connecting to …" fills the empty space on the right.
+	auto* middle_row = new wxBoxSizer(wxHORIZONTAL);
+	auto* checks_col = new wxBoxSizer(wxVERTICAL);
+
 	m_show_password = new wxCheckBox(this, wxID_ANY, _("Show password"));
 	m_show_password->SetValue(false);
 	m_show_password->Bind(wxEVT_CHECKBOX, &wxPasswordPromptDialog::OnToggleShowPassword, this);
-	main_sizer->Add(m_show_password, 0, wxLEFT | wxRIGHT | wxTOP, 8);
+	checks_col->Add(m_show_password, 0, wxLEFT | wxRIGHT | wxTOP, 8);
+	checks_col->AddSpacer(4); // equal outer margins → geometric centre = visual midpoint
 
 	m_save_password = new wxCheckBox(this, wxID_ANY, _("Save password"));
 	m_save_password->SetValue(false);
-	main_sizer->Add(m_save_password, 0, wxALL, 8);
+	checks_col->Add(m_save_password, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
+
+	middle_row->Add(checks_col, 0);
+
+	if (!serviceName.IsEmpty())
+	{
+		// Two labels side-by-side: the static prefix stays grey, only the
+		// service name adopts the network-specific colour.
+		wxFont smallFont = GetFont();
+		smallFont.SetPointSize(std::max(6, smallFont.GetPointSize() - 1));
+
+		auto* service_sizer = new wxBoxSizer(wxHORIZONTAL);
+
+		auto* prefix = new wxStaticText(this, wxID_ANY, _("Connecting to "));
+		prefix->SetFont(smallFont);
+		prefix->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
+		service_sizer->Add(prefix, 0, wxALIGN_CENTER_VERTICAL);
+
+		auto* name = new wxStaticText(this, wxID_ANY, serviceName);
+		name->SetFont(smallFont);
+		name->SetForegroundColour(
+			serviceColour.IsOk() ? serviceColour : wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
+		service_sizer->Add(name, 0, wxALIGN_CENTER_VERTICAL);
+
+		middle_row->Add(service_sizer, 1, wxALIGN_CENTER_VERTICAL | wxALL, 8);
+	}
+
+	main_sizer->Add(middle_row, 0, wxEXPAND);
 
 	auto* button_sizer = new wxBoxSizer(wxHORIZONTAL);
 

@@ -3,6 +3,7 @@
 #include <string>
 #include <wx/dialog.h>
 #include <wx/string.h>
+#include <wx/colour.h>
 
 // Modal dialog shown before launching a title when the active account is an
 // online account with no usable cached password. The user types the NNID
@@ -26,7 +27,10 @@ public:
 	// Custom return id for the "Launch offline" button.
 	static constexpr int ID_LaunchOffline = wxID_HIGHEST + 4101;
 
+	// `serviceColour` tints the "Connecting to …" label; pass wxNullColour to
+	// use the default grey system text colour (e.g. when service is unknown).
 	wxPasswordPromptDialog(wxWindow* parent, wxString miiName, wxString serviceName,
+	                       wxColour serviceColour = wxNullColour,
 	                       std::function<bool(const std::string&)> verifier = nullptr,
 	                       uint32 persistentId = 0);
 

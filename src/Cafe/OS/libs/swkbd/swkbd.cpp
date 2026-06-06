@@ -210,6 +210,7 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	ppcDefineParamStructPtr(appearArg, swkbdAppearArg_t, 0);
 	cemuLog_logDebug(LogType::Force, "SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg");
 	swkbdInternalState->formStringLength = 0;
+	swkbdInternalState->infoTextBuffer[0] = L'\0';
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
 	swkbdInternalState->cancelButtonWasPressed = false;
@@ -234,10 +235,11 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 			swkbdInternalState->formStringBuffer[i] = c;
 			swkbdInternalState->formStringLength++;
 		}
+		swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = L'\0';
 	}
 	else
 	{
-		swkbdInternalState->formStringBuffer[0] = '\0';
+		swkbdInternalState->formStringBuffer[0] = L'\0';
 		swkbdInternalState->formStringLength = 0;
 	}
 	// Copy the optional info label (shown above the input field).
@@ -276,6 +278,7 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	}
 
 	swkbdInternalState->formStringLength = 0;
+	swkbdInternalState->infoTextBuffer[0] = L'\0';
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;

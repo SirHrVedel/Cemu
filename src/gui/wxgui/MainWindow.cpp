@@ -384,6 +384,17 @@ MainWindow::MainWindow()
 	Bind(wxEVT_OPEN_GRAPHIC_PACK, &MainWindow::OnGraphicWindowOpen, this);
 	Bind(wxEVT_LAUNCH_GAME, &MainWindow::OnLaunchFromFile, this);
 	Bind(wxEVT_MENU_HIGHLIGHT, &MainWindow::OnAccountMenuHighlight, this);
+	// wxEVT_MENU_CLOSE fires once the menu is fully dismissed (after all
+	// highlight events), so it is the reliable place to tear down the tooltip.
+	Bind(wxEVT_MENU_CLOSE, [this](wxMenuEvent& event) {
+		if (m_mii_menu_tooltip)
+		{
+			m_mii_menu_tooltip->Hide();
+			m_mii_menu_tooltip->Destroy();
+			m_mii_menu_tooltip = nullptr;
+		}
+		event.Skip();
+	});
 
 	if (LaunchSettings::GDBStubEnabled())
 	{
@@ -557,17 +568,27 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 					"%s (%x)", wxString{std::wstring(activeAccount.GetMiiName())},
 					activeAccount.GetPersistentId());
 				wxString serviceName;
+				wxColour serviceColour;
 				switch (ActiveSettings::GetNetworkService())
 				{
-				case NetworkService::Nintendo: serviceName = _("Nintendo"); break;
-				case NetworkService::Pretendo: serviceName = _("Pretendo"); break;
-				case NetworkService::Custom:   serviceName = _("custom network service"); break;
-				default: break; // Offline or unknown - shown line is suppressed inside the dialog
+				case NetworkService::Nintendo:
+					serviceName = _("Nintendo");
+					serviceColour = wxColour(220, 100, 0);   // orange
+					break;
+				case NetworkService::Pretendo:
+					serviceName = _("Pretendo");
+					serviceColour = wxColour(130, 0, 200);   // purple
+					break;
+				case NetworkService::Custom:
+					serviceName = _("custom network service");
+					serviceColour = wxColour(0, 150, 60);    // green
+					break;
+				default: break; // Offline or unknown — label suppressed inside the dialog
 				}
 				auto verifier = [&](const std::string& pw) {
 					return activeAccount.VerifyPlaintextPassword(pw);
 				};
-				wxPasswordPromptDialog dlg(this, miiName, serviceName, verifier, activeAccount.GetPersistentId());
+				wxPasswordPromptDialog dlg(this, miiName, serviceName, serviceColour, verifier, activeAccount.GetPersistentId());
 				const int result = dlg.ShowModal();
 				if (result == wxID_CANCEL)
 				{
@@ -1032,6 +1053,13 @@ void MainWindow::OnOptionsInput(wxCommandEvent& event)
 
 void MainWindow::OnAccountSelect(wxCommandEvent& event)
 {
+	if (m_mii_menu_tooltip)
+	{
+		m_mii_menu_tooltip->Hide();
+		m_mii_menu_tooltip->Destroy();
+		m_mii_menu_tooltip = nullptr;
+	}
+
 	const int index = event.GetId() - MAINFRAME_MENU_ID_OPTIONS_ACCOUNT_1;
 	const auto& accounts = Account::GetAccounts();
 	wxASSERT(index >= 0 && index < (int)accounts.size());

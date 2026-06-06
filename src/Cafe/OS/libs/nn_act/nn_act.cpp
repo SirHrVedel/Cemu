@@ -664,15 +664,9 @@ void nnActExport_GetParentalControlSlotNoEx(PPCInterpreter_t* hCPU)
 
 void nnActExport_GetDefaultAccount(PPCInterpreter_t* hCPU)
 {
-	// Returns the 1-based slot number that the system should auto-load at
-	// boot. On real hw this is a "primary account" preference saved on the
-	// system. In Cemu we use whichever account the GUI currently has
-	// selected (or the IOSU LoadConsoleAccount session override, if the
-	// menu has already switched). Hardcoding this to 1 caused the Wii U
-	// menu to always boot into slot 1 regardless of the user's GUI choice.
-	const uint8 slot = iosu::act::getCurrentAccountSlot();
-	cemuLog_logDebug(LogType::Force, "nn_act.GetDefaultAccount() -> {}", slot);
-	osLib_returnFromFunction(hCPU, slot);
+	// todo
+	cemuLog_logDebug(LogType::Force, "GetDefaultAccount(): Return 1?");
+	osLib_returnFromFunction(hCPU, 1);
 }
 
 void nnActExport_GetSlotNo(PPCInterpreter_t* hCPU)

@@ -1,6 +1,5 @@
 #include "iosu_act.h"
 #include "iosu_ioctl.h"
-#include "config/LaunchSettings.h"
 
 #include "Cafe/OS/libs/nn_common.h"
 
@@ -459,24 +458,6 @@ namespace iosu
 			{
 				if (_actAccountData[i].isValid && _actAccountData[i].persistentId == persistent_id)
 					return (uint8)(i + 1); // slots are 1-based
-			}
-			return 1; // fallback
-		}
-
-		uint8 getDefaultAccountSlot()
-		{
-			// "Default" = the persistent system preference. Reads CemuConfig
-			// directly (with the --account CLI override on top) so it stays
-			// anchored to the boot account even when LoadConsoleAccount has
-			// flipped the session override mid-title. SetDefaultAccount writes
-			// CemuConfig, so changes by the menu's "set as default" action are
-			// reflected immediately and survive restart.
-			const uint32 defaultPid =
-				LaunchSettings::GetPersistentId().value_or(GetConfig().account.m_persistent_id);
-			for (int i = 0; i < _actAccountCount; i++)
-			{
-				if (_actAccountData[i].isValid && _actAccountData[i].persistentId == defaultPid)
-					return (uint8)(i + 1);
 			}
 			return 1; // fallback
 		}
@@ -940,34 +921,6 @@ int iosuAct_thread()
 				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
 				_cancelIfAccountDoesNotExist();
 				strcpy(actCemuRequest->resultString.strBuffer, _actAccountData[accountIndex].country);
-				actCemuRequest->setACTReturnCode(0);
-			}
-			else if (actCemuRequest->requestCode == IOSU_ARC_SET_DEFAULT_ACCOUNT)
-			{
-				// nn::act::SetDefaultAccount(uint8 slot). Real hw posts shim op
-				// 5 with the slot in the payload byte and persists the new
-				// default in the system's account index so the next boot loads
-				// that slot. In Cemu we translate the slot to its persistent
-				// id and write it into CemuConfig (the same field the GUI's
-				// Options -> Account menu sets), then save so the change
-				// survives a Cemu restart. We also update _loadedAccountSlot
-				// + the session ActiveSettings override so the rest of this
-				// title sees the new default immediately.
-				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
-				_cancelIfAccountDoesNotExist();
-
-				const uint32 pid = _actAccountData[accountIndex].persistentId;
-				GetConfig().account.m_persistent_id = pid;
-				GetConfigHandle().Save();
-
-				_loadedAccountSlot = (uint8)(accountIndex + 1);
-				ActiveSettings::SetSessionPersistentIdOverride(pid);
-
-				const auto& chosen = Account::GetAccount(pid);
-				cemuLog_log(LogType::Force, "IOSU_ACT: new default account {} (slot {}, pid {:#010x})",
-					boost::nowide::narrow(std::wstring(chosen.GetMiiName())),
-					_loadedAccountSlot, pid);
-
 				actCemuRequest->setACTReturnCode(0);
 			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_ENABLE_PASSWORD_CACHE)

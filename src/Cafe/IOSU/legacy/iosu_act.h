@@ -44,12 +44,6 @@ namespace iosu
 	namespace act
 	{
 		uint8 getCurrentAccountSlot();
-		// 1-based slot of the persistent boot-default account (CemuConfig /
-		// --account), independent of any mid-session LoadConsoleAccount. Used
-		// by nn::act::GetDefaultAccount so the menu's per-user "is this the
-		// default?" indicator stays anchored to one slot when the user shuffles
-		// through the user-select screen.
-		uint8 getDefaultAccountSlot();
 		bool getPrincipalId(uint8 slot, uint32* principalId);
 		bool getAccountId(uint8 slot, char* accountId);
 		bool getMii(uint8 slot, FFLData_t* fflData);
@@ -132,7 +126,6 @@ struct iosuActCemuRequest_t
 #define IOSU_ARC_LOAD_CONSOLE_ACCOUNT	0x0E
 #define IOSU_ARC_PASSWORDCACHEENABLED	0x0F
 #define IOSU_ARC_ENABLE_PASSWORD_CACHE	0x10
-#define IOSU_ARC_SET_DEFAULT_ACCOUNT	0x11
 
 uint32 iosuAct_getAccountIdOfCurrentAccount();
 

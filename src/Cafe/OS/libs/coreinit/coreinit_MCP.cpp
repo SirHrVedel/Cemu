@@ -164,7 +164,15 @@ void coreinitExport_MCP_GetTitleInfo(PPCInterpreter_t* hCPU)
 	if (mcpRequest->titleListRequest.titleCount == 0)
 	{
 		cemuLog_log(LogType::Force, "MCP_GetTitleInfo() failed to get title info");
-	
+		// drmapp's CheckTitleEnability unconditionally probes the update slot
+		// (0x0005000e/...) and the DLC slot (0x0005000c/...) for every game
+		// launch. On real hw, "slot is empty" returns a specific status that
+		// drmapp treats as benign and proceeds with the base title. Cemu's
+		// generic BUILD_NN_RESULT(STATUS, MCP, 0) ends up classified as a
+		// fatal MCP error -> 199-9999. Returning success-with-zero-entries
+		// for the optional slots unblocks base-only retail game launches
+		// without affecting lookups against base/system titleIds (which
+		// keep the original error path that E-Shop / nn_vctl.rpl depend on).
 		if (_MCP_IsOptionalSlotTitle(titleId))
 		{
 			osLib_returnFromFunction(hCPU, NN_RESULT_SUCCESS);
@@ -205,6 +213,45 @@ void coreinitExport_MCP_GetTitleInfoByTitleAndDevice(PPCInterpreter_t* hCPU)
 			return;
 		}
 		osLib_returnFromFunction(hCPU, BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_MCP, 0)); // E-Shop/nn_vctl.rpl expects error to be returned when no title is found
+		return;
+	}
+
+	osLib_returnFromFunction(hCPU, mcpRequest->returnCode);
+}
+
+// MCP_GetTitleInfoByTitleAndDeviceType is the deviceType-keyed (enum: 1=odd,
+// 2=usb, 3=mlc, ...) sibling of MCP_GetTitleInfoByTitleAndDevice. The Wii U
+// Menu uses this for the applet-launch transition card lookup. With the
+// export missing, the menu reads its own stale MCPTitleInfo from the stack
+// region and displays "Wii U Menu" as every applet's name on the transition
+// screen. We forward to the same IOSU title-lookup path regardless of
+// device type since Cemu serves everything from a single mlc mount.
+void coreinitExport_MCP_GetTitleInfoByTitleAndDeviceType(PPCInterpreter_t* hCPU)
+{
+	ppcDefineParamU32(mcpHandle, 0);
+	ppcDefineParamU64(titleId, 2);
+	ppcDefineParamU32(deviceType, 4);
+	ppcDefineParamStructPtr(titleList, MCPTitleInfo, 5);
+
+	cemuLog_logDebug(LogType::Force, "MCP_GetTitleInfoByTitleAndDeviceType(0x{:016x}, deviceType={})", titleId, deviceType);
+
+	mcpPrepareRequest();
+	mcpRequest->requestCode = IOSU_MCP_GET_TITLE_INFO;
+	mcpRequest->titleListRequest.titleCount = 1;
+	mcpRequest->titleListRequest.titleList = titleList;
+	mcpRequest->titleListRequest.titleListBufferSize = sizeof(MCPTitleInfo);
+	mcpRequest->titleListRequest.titleId = titleId;
+	__depr__IOS_Ioctlv(IOS_DEVICE_MCP, IOSU_MCP_REQUEST_CEMU, 1, 1, mcpBufferVector);
+
+	if (mcpRequest->titleListRequest.titleCount == 0)
+	{
+		cemuLog_logDebug(LogType::Force, "MCP_GetTitleInfoByTitleAndDeviceType() no title found");
+		if (_MCP_IsOptionalSlotTitle(titleId))
+		{
+			osLib_returnFromFunction(hCPU, NN_RESULT_SUCCESS);
+			return;
+		}
+		osLib_returnFromFunction(hCPU, BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_MCP, 0));
 		return;
 	}
 
@@ -453,6 +500,51 @@ namespace coreinit
 		return 0;
 	}
 
+	// drmapp.rpl's TitlePackageTask path queries the installed base-title
+	// version and the installed patch version, then computes
+	// needUpdate = (currentVersion < requiredVersion). With both functions
+	// missing, drmapp's TitleVersionInfo struct stays zeroed and the
+	// version-check branch logs "Unsupported lib call" lines. The version
+	// branch still passes (0 >= 0) but the subsequent CheckTitleEnability
+	// step is what actually fails on base-only games (see optional-slot
+	// short-circuit above). These stubs simply silence the missing-export
+	// warnings and report "version 0" for the foreground base title and
+	// "no patch installed" for everything else.
+	uint32 MCP_GetInstalledTitleVersion(uint32 mcpHandle, uint64 titleId, uint16be* outVersion)
+	{
+		if (!outVersion)
+			return BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_MCP, 0);
+		uint16 version = 0;
+		if (titleId == CafeSystem::GetForegroundTitleId())
+			version = CafeSystem::GetForegroundTitleVersion();
+		*outVersion = version;
+		return 0;
+	}
+
+	uint32 MCP_PatchGetVersion(uint32 mcpHandle, uint64 titleId, uint16be* outVersion)
+	{
+		// drmapp passes the update titleId (0x0005000e/<low>) here. Cemu
+		// has no separate patch-version store; if a patch is mounted, the
+		// foreground title's version already reflects the patched value.
+		// For "no patch present" report 0.
+		if (!outVersion)
+			return BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_MCP, 0);
+		uint16 version = 0;
+		uint64 baseTitleId = (titleId & ~((uint64)0xFFFFFFFFu << 32)) |
+			((uint64)0x00050000u << 32);
+		if (baseTitleId == CafeSystem::GetForegroundTitleId())
+			version = CafeSystem::GetForegroundTitleVersion();
+		*outVersion = version;
+		return 0;
+	}
+
+	uint32 MCP_PatchGetLatestVersion(uint32 mcpHandle, uint64 titleId, uint16be* outVersion)
+	{
+		// "latest available" == "what's installed" since Cemu has no NUS
+		// version oracle.
+		return MCP_PatchGetVersion(mcpHandle, titleId, outVersion);
+	}
+
 	void InitializeMCP()
 	{
 		osLib_addFunction("coreinit", "MCP_Open", coreinitExport_MCP_Open);
@@ -463,6 +555,7 @@ namespace coreinit
 		osLib_addFunction("coreinit", "MCP_TitleCount", coreinitExport_MCP_TitleCount);
 		osLib_addFunction("coreinit", "MCP_GetTitleInfo", coreinitExport_MCP_GetTitleInfo);
 		osLib_addFunction("coreinit", "MCP_GetTitleInfoByTitleAndDevice", coreinitExport_MCP_GetTitleInfoByTitleAndDevice);
+		osLib_addFunction("coreinit", "MCP_GetTitleInfoByTitleAndDeviceType", coreinitExport_MCP_GetTitleInfoByTitleAndDeviceType);
 
 		osLib_addFunction("coreinit", "MCP_TitleListByDevice", export_MCP_TitleListByDevice);
 		osLib_addFunction("coreinit", "MCP_GetSystemVersion", export_MCP_GetSystemVersion);
@@ -483,6 +576,10 @@ namespace coreinit
 
 		cafeExportRegister("coreinit", MCP_GetTitleId, LogType::Placeholder);
 		cafeExportRegister("coreinit", MCP_DemoLaunchGetRemainder, LogType::Placeholder);
+
+		cafeExportRegister("coreinit", MCP_GetInstalledTitleVersion, LogType::Placeholder);
+		cafeExportRegister("coreinit", MCP_PatchGetVersion, LogType::Placeholder);
+		cafeExportRegister("coreinit", MCP_PatchGetLatestVersion, LogType::Placeholder);
 	}
 
 }

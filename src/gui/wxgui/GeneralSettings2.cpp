@@ -1782,8 +1782,21 @@ void GeneralSettings2::UpdateAccountInformation()
 	}
 
 	// Load Mii face icon for the selected account.
+	// Show a tooltip on the placeholder when no real image is available.
 	if (m_mii_icon)
-		m_mii_icon->SetBitmap(wxLoadMiiImage(account.GetPersistentId()));
+	{
+		const wxBitmap mii = wxLoadMiiImage(account.GetPersistentId(), 64, /*placeholder=*/false);
+		if (mii.IsOk())
+		{
+			m_mii_icon->SetBitmap(mii);
+			m_mii_icon->UnsetToolTip();
+		}
+		else
+		{
+			m_mii_icon->SetBitmap(wxLoadMiiImage(account.GetPersistentId(), 64, /*placeholder=*/true));
+			m_mii_icon->SetToolTip(_("Account has no Mii image!"));
+		}
+	}
 
 	// refresh pane size
 	m_account_grid->InvalidateBestSize();

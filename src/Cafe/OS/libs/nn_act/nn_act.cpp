@@ -231,58 +231,6 @@ namespace act
 			actRequest->loadFlag    = enable ? 1 : 0;
 			return _doCemuActRequest(actRequest);
 		}
-
-		nnResult Cancel()
-		{
-			// Mirrors RPL @ 0x0200398C..39C4: same init-flag guard as Load/Unload,
-			// then posts shimutil IPC op 0x64 to /dev/act which aborts any
-			// in-flight async ACT operations (token refresh, server binding, ...).
-			// The Wii U system menu calls this when navigating to the user-select
-			// screen, before UnloadConsoleAccount.
-			//
-			// Cemu has no asynchronous ACT operations - every IOSU_ARC_* handler
-			// completes synchronously inside iosuAct_thread - so there is nothing
-			// to cancel. We keep the init-flag check for behaviour fidelity and
-			// skip the IPC roundtrip. If async work is added to /dev/act later,
-			// route the cancellation through IOSU via a new IOSU_ARC_* subcode.
-			if (g_initializeCount == 0)
-				return ACTResult_NotInitialized;
-			return 0;
-		}
-
-		nnResult LoadConsoleAccount(uint8 slot, uint32 option, const char* password, bool flag)
-		{
-			// Mirrors RPL @ 0x0200AF38..AF60: check the act init flag first.
-			if (g_initializeCount == 0)
-				return ACTResult_NotInitialized;
-
-			// Mirrors RPL @ 0x0200AF9C..AFCC: password must fit in 16 chars
-			// (strnlen(p, 17) + 1 <= 0x11). Otherwise ACTResult_OutOfRange.
-			size_t passwordLen = 0;
-			if (password)
-			{
-				while (passwordLen < 17 && password[passwordLen] != '\0')
-					++passwordLen;
-				if (passwordLen >= 17)
-					return ACTResult_OutOfRange;
-			}
-
-			// Hand the request to IOSU. All account/file state lives there - the
-			// real RPL posts a shimutil ipc; we use the IOSU_ACT_REQUEST_CEMU envelope.
-			actPrepareRequest();
-			actRequest->requestCode = IOSU_ARC_LOAD_CONSOLE_ACCOUNT;
-			actRequest->accountSlot = slot;
-			actRequest->loadOption  = option;
-			actRequest->loadFlag    = flag ? 1 : 0;
-			if (password && passwordLen > 0)
-				memcpy(actRequest->loadPassword, password, passwordLen + 1);
-			else
-				actRequest->loadPassword[0] = '\0';
-
-			uint32 ioctlResult = __depr__IOS_Ioctlv(IOS_DEVICE_ACT, IOSU_ACT_REQUEST_CEMU,
-			                                       1, 1, actBufferVector);
-			return getNNReturnCode(ioctlResult, actRequest);
-		}
 	}
 }
 
@@ -860,8 +808,6 @@ namespace nn::act
 			cafeExportRegisterFunc(nn::act::GetErrorCode, "nn_act", "GetErrorCode__Q2_2nn3actFRCQ2_2nn6Result", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabled, "nn_act", "IsPasswordCacheEnabled__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabledEx, "nn_act", "IsPasswordCacheEnabledEx__Q2_2nn3actFUc", LogType::Placeholder);
-			cafeExportRegisterFunc(nn::act::LoadConsoleAccount, "nn_act", "LoadConsoleAccount__Q2_2nn3actFUc13ACTLoadOptionPCcb", LogType::Placeholder);
-			cafeExportRegisterFunc(nn::act::Cancel, "nn_act", "Cancel__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::EnableAccountPasswordCache, "nn_act", "EnableAccountPasswordCache__Q2_2nn3actFb", LogType::Placeholder);
 
 			// placeholders / incomplete implementations

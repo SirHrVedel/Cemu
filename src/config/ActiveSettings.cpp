@@ -156,11 +156,6 @@ void ActiveSettings::EnableAudioOnlyAux(bool state)
 
 uint32 ActiveSettings::GetPersistentId()
 {
-	// Session override (set by the IOSU LoadConsoleAccount handler) wins over
-	// both the --account command line and the persisted GUI selection, since
-	// it represents an explicit in-title user switch by the system menu.
-	if (s_session_persistent_id_override != 0)
-		return s_session_persistent_id_override;
 	return LaunchSettings::GetPersistentId().value_or(GetConfig().account.m_persistent_id);
 }
 

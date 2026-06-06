@@ -82,10 +82,6 @@ typedef struct
 	SwkbdKeyboardArg_t keyboardArg;
 	// input form appear args
 	sint32 maxTextLength;
-	// decision flags (mirrors real swkbd: game polls these, then calls DisappearInputForm)
-	bool cancelButtonWasPressed; // set when back button is pressed; checked by SwkbdIsDecideCancelButton
-	// info label supplied by the game via AppearArg::infoText (shown above the text field)
-	wchar_t infoTextBuffer[256];
 	// imgui keyboard drawing stuff
 	bool shiftActivated;
 	bool returnState;
@@ -212,7 +208,6 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
-	swkbdInternalState->cancelButtonWasPressed = false;
 	swkbdInternalState->keyboardOnlyMode = false;
 
 	// setup max text length
@@ -240,26 +235,6 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 		swkbdInternalState->formStringBuffer[0] = '\0';
 		swkbdInternalState->formStringLength = 0;
 	}
-	// Copy the optional info label (shown above the input field).
-	{
-		const uint16be* infoStr = appearArg->infoText.GetPtr();
-		if (infoStr)
-		{
-			sint32 i = 0;
-			for (; i < 255; i++)
-			{
-				const wchar_t c = (uint16)infoStr[i];
-				swkbdInternalState->infoTextBuffer[i] = c;
-				if (c == L'\0')
-					break;
-			}
-			swkbdInternalState->infoTextBuffer[i] = L'\0';
-		}
-		else
-		{
-			swkbdInternalState->infoTextBuffer[0] = L'\0';
-		}
-	}
 	osLib_returnFromFunction(hCPU, 1);
 }
 
@@ -279,7 +254,6 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;
-	swkbdInternalState->cancelButtonWasPressed = false;
 	swkbdInternalState->formStringBuffer[0] = '\0';
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->keyboardArg = *keyboardArg;
@@ -313,14 +287,6 @@ void swkbdExport_SwkbdGetInputFormString(PPCInterpreter_t* hCPU)
 void swkbdExport_SwkbdIsDecideOkButton(PPCInterpreter_t* hCPU)
 {
 	if (swkbdInternalState->decideButtonWasPressed)
-		osLib_returnFromFunction(hCPU, 1);
-	else
-		osLib_returnFromFunction(hCPU, 0);
-}
-
-void swkbdExport_SwkbdIsDecideCancelButton(PPCInterpreter_t* hCPU)
-{
-	if (swkbdInternalState->cancelButtonWasPressed)
 		osLib_returnFromFunction(hCPU, 1);
 	else
 		osLib_returnFromFunction(hCPU, 0);
@@ -386,202 +352,44 @@ void swkbdExport_SwkbdIsNeedCalcSubThreadPredict(PPCInterpreter_t* hCPU)
 void swkbd_keyInput(uint32 keyCode);
 void swkbd_render(bool mainWindow)
 {
-	// Animation state: separate timers for appear and disappear.
-	// Shared statics so both the main window and GamePad window use the same timestamps.
-	static std::chrono::steady_clock::time_point s_appear_time;
-	static std::chrono::steady_clock::time_point s_disappear_time;
-	static bool s_was_active   = false;
-	static bool s_disappearing = false;
-
-	const bool nowActive = (swkbdInternalState != NULL && swkbdInternalState->isActive);
-
-	if (nowActive && !s_was_active)
-	{
-		// Keyboard just appeared — start fade-in, cancel any in-progress fade-out.
-		s_appear_time  = tick_cached();
-		s_disappearing = false;
-	}
-	else if (!nowActive && s_was_active)
-	{
-		// Keyboard just dismissed — start fade-out.
-		s_disappear_time = tick_cached();
-		s_disappearing   = true;
-	}
-	s_was_active = nowActive;
-
-	constexpr float kAnimDuration = 0.25f;
-
-	if (s_disappearing)
-	{
-		const float elapsed = std::chrono::duration<float>(tick_cached() - s_disappear_time).count();
-		if (elapsed >= kAnimDuration)
-		{
-			s_disappearing = false;
-			return; // fade-out complete
-		}
-	}
-	else if (!nowActive)
-	{
-		return; // inactive and no fade-out pending
-	}
-
-	// eased: 0→1 while appearing (ease-out), 1→0 while disappearing (ease-in).
-	// The existing slide formula  40*(1-eased)  already reverses automatically:
-	//   appearing   → offset 40→0  (slides up)
-	//   disappearing → offset 0→40  (slides down)
-	const float eased = [&]()
-	{
-		if (s_disappearing)
-		{
-			const float t = std::min(std::chrono::duration<float>(tick_cached() - s_disappear_time).count() / kAnimDuration, 1.0f);
-			return (1.0f - t) * (1.0f - t); // fast exit, gentle finish
-		}
-		const float t = std::min(std::chrono::duration<float>(tick_cached() - s_appear_time).count() / kAnimDuration, 1.0f);
-		return 1.0f - (1.0f - t) * (1.0f - t); // fast rise, gentle finish
-	}();
-
+	// only render if active
+	if( swkbdInternalState == NULL || swkbdInternalState->isActive == false)
+		return;
+	
 	auto& io = ImGui::GetIO();
-
-	// ── Canvas ────────────────────────────────────────────────────────────────
-	// Resolve first — before any Push/Pop — so an early return never leaves the
-	// style stack unbalanced, and so font sizes can be derived from canvas height.
-	sint32 canvasX, canvasY, canvasW, canvasH;
-	LatteRenderTarget_getScreenImageArea(&canvasX, &canvasY, &canvasW, &canvasH, nullptr, nullptr, !mainWindow);
-	if (canvasW <= 0 || canvasH <= 0)
-		return; // canvas not ready yet
-	const ImVec2 canvasMin = { (float)canvasX, (float)canvasY };
-	const float cW = (float)canvasW;
-	const float cH = (float)canvasH;
-
-	// ── Global scale ──────────────────────────────────────────────────────────
-	// Everything is authored at a 1280×720 baseline and scaled from there.
-	const float scale = cH / 720.0f;
-
-	// ── Font ──────────────────────────────────────────────────────────────────
-	// One atlas entry at a fixed base size; per-window vertex scaling via
-	// SetWindowFontScale() gives any target size without atlas rebuilds.
-	// Base 64 px: downscales cleanly to 720p/1080p, slight upscale at 4K.
-	//
-	//   Target sizes at 720p (scale=1):
-	//     keyboard buttons  36 px  kbdScale   = 36/64
-	//     input field       52 px  inputScale = 52/64
-	//     info label        40 px  infoScale  = 40/64
-	constexpr float kBaseFontSz = 64.0f;
-	const auto baseFont = ImGui_GetFont(kBaseFontSz);
-	if (!baseFont)
-		return; // font queued for loading; renders correctly next frame
-	const float kbdScale   = (36.0f * scale) / kBaseFontSz;
-	const float inputScale = (52.0f * scale) / kBaseFontSz;
-	const float infoScale  = (40.0f * scale) / kBaseFontSz;
-
-	// ── Layout metrics ────────────────────────────────────────────────────────
-	const float kWinPadX  = ImGui::GetStyle().WindowPadding.x;
-	const float kWinPadY  = ImGui::GetStyle().WindowPadding.y;
-	const float kItemSpX  = ImGui::GetStyle().ItemSpacing.x;
-	const float kItemSpY  = ImGui::GetStyle().ItemSpacing.y;
-	const float kInnerW   = cW - kWinPadX * 2.0f;
-	// 12 keys fill the full canvas width (widest row: digits + backspace).
-	const float keyWidth   = (kInnerW - kItemSpX * 11.0f) / 12.0f;
-	// Space bar fills what remains after back, shift, and enter on the bottom row.
-	const float spaceWidth = kInnerW - keyWidth * 3.0f - kItemSpX * 3.0f;
-	// Five rows + four gaps + top/bottom padding = exactly cH/2.
-	const float keyHeight  = (cH * 0.5f - 4.0f * kItemSpY - 2.0f * kWinPadY) / 5.0f;
-	// Slide animation offset scales with the canvas so it feels the same at every resolution.
-	const float slideOffset = 40.0f * scale * (1.0f - eased);
+	const auto font = ImGui_GetFont(48.0f);
+	const auto textFont = ImGui_GetFont(24.0f);
+	if (!font || !textFont)
+		return;
 
 	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
 
-	// ── Global style pushes ───────────────────────────────────────────────────
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
-	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, eased);
 
-	// Background dim — canvas only, never bleeds into letterbox borders.
-	ImGui::SetNextWindowPos(canvasMin, ImGuiCond_Always);
-	ImGui::SetNextWindowSize({ cW, cH }, ImGuiCond_Always);
+	ImGui::SetNextWindowPos({ 0,0 }, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0,0 });
-	ImGui::SetNextWindowBgAlpha(0.8f * eased);
+	ImGui::SetNextWindowBgAlpha(0.8f);
 	ImGui::Begin("Background overlay", nullptr, kPopupFlags | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
 	ImGui::End();
 	ImGui::PopStyleVar(2);
 
-	// The info label and input box are treated as one visual group whose combined
-	// height is centred on the middle of the upper half of the canvas.
-	const float anchorY      = canvasMin.y + cH * 0.25f;
-	const float fieldWidth   = cW * 0.8f;
-	const float kFramePadY  = ImGui::GetStyle().FramePadding.y;
-	// Estimated single-line height of the input box (font + padding).
-	const float inputH      = 52.0f * scale + 2.0f * kWinPadY + 2.0f * kFramePadY;
-	// Info text uses a bottom pivot so multi-line text grows upward, never
-	// overlapping the input field below it.
-	const float infoBottomY = anchorY - inputH * 0.5f - 6.0f * scale;
+	ImVec2 position = { io.DisplaySize.x / 2.0f, io.DisplaySize.y / 3.0f };
+	ImVec2 pivot = { 0.5f, 0.5f };
 
-	// Info label — transparent, bottom-pivot, centre-aligned word-wrapped text.
-	if (swkbdInternalState->infoTextBuffer[0] != L'\0')
-	{
-		 const auto infoStr = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->infoTextBuffer));
-    ImGui::SetNextWindowBgAlpha(0.0f);
-    ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
-    ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, infoBottomY },
-                            ImGuiCond_Always, { 0.5f, 1.0f });
-    ImGui::PushFont(baseFont);
-    if (ImGui::Begin("Keyboard Info Label", nullptr, kPopupFlags | ImGuiWindowFlags_NoBackground))
-    {
-      ImGui::SetWindowFontScale(infoScale);
-      // SetCursorPosX is relative to the window left edge (not content region),
-      // so use GetWindowWidth() as the container for the centering formula.
-      // Wrap still guards against the content area (minus padding on both sides).
-      const float windowW  = ImGui::GetWindowWidth();
-      const float wrapW    = windowW - 2.0f * kWinPadX;
-	  auto flushLine = [&](const std::string& line)
+	const auto button_len = font->GetCharAdvance('W');
+	const float len = button_len * std::max(4, std::max(swkbdInternalState->maxTextLength, (sint32)swkbdInternalState->keyboardArg.receiverArg.stringBufSize));
 
-		
-			{
-		  if (line.empty())
-			  return;
-		  const float lineW = ImGui::CalcTextSize(line.c_str()).x;
-		  ImGui::SetCursorPosX((windowW - lineW) * 0.5f);
-		  ImGui::TextUnformatted(line.c_str());
-	  };
-
-	  std::string currentLine;
-	  const char* p = infoStr.c_str();
-	  while (*p)
-	  {
-		  const char* wordStart = p;
-		  while (*p && *p != ' ')
-			  ++p;
-		  std::string word(wordStart, p);
-		  if (*p == ' ')
-			  ++p;
-		  std::string testLine = currentLine.empty() ? word : currentLine + ' ' + word;
-		  if (!currentLine.empty() && ImGui::CalcTextSize(testLine.c_str()).x > wrapW)
-		  {
-			  flushLine(currentLine);
-			  currentLine = std::move(word);
-		  }
-		  else
-		  {
-			  currentLine = std::move(testLine);
-		  }
-			}
-			flushLine(currentLine);
-		}
-		ImGui::End();
-		ImGui::PopFont();
-	}
-
-	// Input box — 80 % canvas width, centre pivot on anchorY.
-	ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
-	ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, anchorY },
-	                        ImGuiCond_Always, { 0.5f, 0.5f });
-	ImGui::SetNextWindowBgAlpha(0.9f * eased);
-	ImGui::PushFont(baseFont);
+	ImVec2 box_size = { std::min(io.DisplaySize.x * 0.9f, len + 90), 0 };
+	ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
+	ImGui::SetNextWindowSize(box_size, ImGuiCond_Always);
+	ImGui::SetNextWindowBgAlpha(0.9f);
+	ImGui::PushFont(font);
 	if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
 	{
-		ImGui::SetWindowFontScale(inputScale);
 		ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
-		ImGui::SameLine(0, 8);
+		ImGui::SameLine(70);
 		auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
 
 		static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
@@ -600,20 +408,19 @@ void swkbd_render(bool mainWindow)
 		ImGui::PushTextWrapPos();
 		ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
 		ImGui::PopTextWrapPos();
+
+		position.y += ImGui::GetWindowSize().y + 100.0f;
 	}
 	ImGui::End();
 	ImGui::PopFont();
 
-	// Keyboard — bottom-centre pivot at canvas bottom; slides in/out via slideOffset.
-	ImGui::SetNextWindowSizeConstraints({ cW, 0.0f }, { cW, FLT_MAX });
-	ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, canvasMin.y + cH + slideOffset },
-	                        ImGuiCond_Always, { 0.5f, 1.0f });
-	ImGui::SetNextWindowBgAlpha(0.9f * eased);
-	ImGui::PushFont(baseFont);
+	ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
+	//ImGui::SetNextWindowSize({ io.DisplaySize.x * 0.9f , 0.0f}, ImGuiCond_Always);
+	ImGui::SetNextWindowBgAlpha(0.9f);
+	ImGui::PushFont(textFont);
 
 	if (ImGui::Begin(fmt::format("Software keyboard##SoftwareKeyboard{}",mainWindow).c_str(), nullptr, kPopupFlags))
 	{
-		ImGui::SetWindowFontScale(kbdScale);
 		if(swkbdInternalState->shiftActivated)
 		{
 			const char* keys[] =
@@ -622,18 +429,15 @@ void swkbd_render(bool mainWindow)
 				"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "@", "\n",
 				"A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "\"", "\n",
 				"Z", "X", "C", "V", "B", "N", "M", "<", ">", "+", "=", "\n",
-				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
+				_utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
 			};
 			for (auto key : keys)
 			{
 				if (*key != '\n')
 				{
-					ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-					if (ImGui::IsItemClicked())
+					if (ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0}))
 					{
-						if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-							swkbdInternalState->cancelButtonWasPressed = true; // mirrors OK: game polls SwkbdIsDecideCancelButton then calls SwkbdDisappearInputForm
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
+						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
 							swkbd_keyInput(8);
 						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
 							swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
@@ -657,18 +461,15 @@ void swkbd_render(bool mainWindow)
 				"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "/", "\n",
 				"a", "s", "d", "f", "g", "h", "j", "k", "l", ":", "'", "\n",
 				"z", "x", "c", "v", "b", "n", "m", ",", ".", "?", "!", "\n",
-				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
+				_utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
 			};
 			for (auto key : keys)
 			{
 				if (*key != '\n')
 				{
-					ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-					if (ImGui::IsItemClicked())
+					if (ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0 }))
 					{
-						if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-							swkbdInternalState->cancelButtonWasPressed = true; // mirrors OK: game polls SwkbdIsDecideCancelButton then calls SwkbdDisappearInputForm
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
+						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
 							swkbd_keyInput(8);
 						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
 							swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
@@ -688,35 +489,25 @@ void swkbd_render(bool mainWindow)
 	}
 	ImGui::End();
 
-	// Nav inputs are processed only for the main window.  Both the main and pad
-	// windows call swkbd_render each frame with separate ImGui contexts.  If both
-	// contexts ran this block, the pad call would reset cancelState/returnState to
-	// false even while the main-window Cancel/Input nav is still held, causing the
-	// main call to fire backspace or confirm on every single frame and immediately
-	// erase any character the user just typed.
-	if (mainWindow)
+	if (io.NavInputs[ImGuiNavInput_Cancel] > 0)
 	{
-		if (io.NavInputs[ImGuiNavInput_Cancel] > 0)
-		{
-			if (!swkbdInternalState->cancelState)
-				swkbd_keyInput(8); // backspace
-			swkbdInternalState->cancelState = true;
-		}
-		else
-			swkbdInternalState->cancelState = false;
-
-		if (io.NavInputs[ImGuiNavInput_Input] > 0)
-		{
-			if (!swkbdInternalState->returnState)
-				swkbd_keyInput(13); // return
-			swkbdInternalState->returnState = true;
-		}
-		else
-			swkbdInternalState->returnState = false;
+		if(!swkbdInternalState->cancelState)
+			swkbd_keyInput(8); // backspace
+		swkbdInternalState->cancelState = true;
 	}
+	else
+		swkbdInternalState->cancelState = false;
+
+	if (io.NavInputs[ImGuiNavInput_Input] > 0)
+	{
+		if (!swkbdInternalState->returnState)
+			swkbd_keyInput(13); // return
+		swkbdInternalState->returnState = true;
+	}
+	else
+		swkbdInternalState->returnState = false;
 
 	ImGui::PopFont();
-	ImGui::PopStyleVar(); // fade-in alpha
 	ImGui::PopStyleColor();
 }
 
@@ -853,7 +644,6 @@ namespace swkbd
 			osLib_addFunction("swkbd", "SwkbdAppearKeyboard__3RplFRCQ3_2nn5swkbd11KeyboardArg", swkbdExport_SwkbdAppearKeyboard);
 			osLib_addFunction("swkbd", "SwkbdGetInputFormString__3RplFv", swkbdExport_SwkbdGetInputFormString);
 			osLib_addFunction("swkbd", "SwkbdIsDecideOkButton__3RplFPb", swkbdExport_SwkbdIsDecideOkButton);
-			osLib_addFunction("swkbd", "SwkbdIsDecideCancelButton__3RplFPb", swkbdExport_SwkbdIsDecideCancelButton);
 			osLib_addFunction("swkbd", "SwkbdInitLearnDic__3RplFPv", swkbdExport_SwkbdInitLearnDic);
 			osLib_addFunction("swkbd", "SwkbdGetDrawStringInfo__3RplFPQ3_2nn5swkbd14DrawStringInfo", swkbdExport_SwkbdGetDrawStringInfo);
 			osLib_addFunction("swkbd", "SwkbdIsNeedCalcSubThreadFont__3RplFv", swkbdExport_SwkbdIsNeedCalcSubThreadFont);

@@ -90,7 +90,12 @@ typedef struct
 	bool shiftActivated;
 	bool returnState;
 	bool cancelState;
-	
+	// controller cursor position on the key grid
+	sint32 navRow;
+	sint32 navCol;
+	uint8  navHeldDirs;  // bitmask of d-pad directions held last frame (prevents held-down repeat)
+	bool   activateHeld; // A button was held last frame
+
 }swkbdInternalState_t;
 
 swkbdInternalState_t* swkbdInternalState = NULL;
@@ -211,6 +216,10 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	cemuLog_logDebug(LogType::Force, "SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg");
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->infoTextBuffer[0] = L'\0';
+	swkbdInternalState->navRow      = 0;
+	swkbdInternalState->navCol      = 0;
+	swkbdInternalState->navHeldDirs = 0;
+	swkbdInternalState->activateHeld = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
 	swkbdInternalState->cancelButtonWasPressed = false;
@@ -279,6 +288,10 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->infoTextBuffer[0] = L'\0';
+	swkbdInternalState->navRow      = 0;
+	swkbdInternalState->navCol      = 0;
+	swkbdInternalState->navHeldDirs = 0;
+	swkbdInternalState->activateHeld = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;
@@ -492,7 +505,7 @@ void swkbd_render(bool mainWindow)
 	// Slide animation offset scales with the canvas so it feels the same at every resolution.
 	const float slideOffset = 40.0f * scale * (1.0f - eased);
 
-	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav;
 
 	// ── Global style pushes ───────────────────────────────────────────────────
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
@@ -627,29 +640,42 @@ void swkbd_render(bool mainWindow)
 				"Z", "X", "C", "V", "B", "N", "M", "<", ">", "+", "=", "\n",
 				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
 			};
+			int curRow = 0, curCol = 0;
 			for (auto key : keys)
 			{
-				if (*key != '\n')
+				if (*key == '\n')
 				{
-					ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-					if (ImGui::IsItemClicked())
-					{
-						if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-							swkbdInternalState->cancelButtonWasPressed = true; // mirrors OK: game polls SwkbdIsDecideCancelButton then calls SwkbdDisappearInputForm
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
-							swkbd_keyInput(8);
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
-							swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
-							swkbd_keyInput(13);
-						else
-							swkbd_keyInput(*key);
-					}
-
-					ImGui::SameLine();
-				}
-				else
+					curRow++;
+					curCol = 0;
 					ImGui::NewLine();
+					continue;
+				}
+				const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
+				if (navSel)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
+				}
+				ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
+				const bool triggered = ImGui::IsItemClicked();
+				if (navSel)
+					ImGui::PopStyleColor(3);
+				if (triggered)
+				{
+					if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
+						swkbdInternalState->cancelButtonWasPressed = true;
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
+						swkbd_keyInput(8);
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
+						swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
+						swkbd_keyInput(13);
+					else
+						swkbd_keyInput(*key);
+				}
+				ImGui::SameLine();
+				curCol++;
 			}
 		}
 		else
@@ -662,29 +688,42 @@ void swkbd_render(bool mainWindow)
 				"z", "x", "c", "v", "b", "n", "m", ",", ".", "?", "!", "\n",
 				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
 			};
+			int curRow = 0, curCol = 0;
 			for (auto key : keys)
 			{
-				if (*key != '\n')
+				if (*key == '\n')
 				{
-					ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-					if (ImGui::IsItemClicked())
-					{
-						if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-							swkbdInternalState->cancelButtonWasPressed = true; // mirrors OK: game polls SwkbdIsDecideCancelButton then calls SwkbdDisappearInputForm
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
-							swkbd_keyInput(8);
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
-							swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
-						else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
-							swkbd_keyInput(13);
-						else
-							swkbd_keyInput(*key);
-					}
-
-					ImGui::SameLine();
-				}
-				else
+					curRow++;
+					curCol = 0;
 					ImGui::NewLine();
+					continue;
+				}
+				const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
+				if (navSel)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
+				}
+				ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
+				const bool triggered = ImGui::IsItemClicked();
+				if (navSel)
+					ImGui::PopStyleColor(3);
+				if (triggered)
+				{
+					if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
+						swkbdInternalState->cancelButtonWasPressed = true;
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
+						swkbd_keyInput(8);
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
+						swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
+					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
+						swkbd_keyInput(13);
+					else
+						swkbd_keyInput(*key);
+				}
+				ImGui::SameLine();
+				curCol++;
 			}
 		}
 		ImGui::NewLine();
@@ -699,24 +738,115 @@ void swkbd_render(bool mainWindow)
 	// erase any character the user just typed.
 	if (mainWindow)
 	{
-		if (io.NavInputs[ImGuiNavInput_Cancel] > 0)
+		// Snapshot every NavInput we use, then zero them out immediately.
+		// io.NavInputs values are only ever SET by the input layer (never cleared),
+		// so without this they persist at 1.0f after a button is released, causing
+		// all edge-detection to get permanently stuck after the first press.
+		const float axisLeft     = io.NavInputs[ImGuiNavInput_DpadLeft];
+		const float axisRight    = io.NavInputs[ImGuiNavInput_DpadRight];
+		const float axisUp       = io.NavInputs[ImGuiNavInput_DpadUp];
+		const float axisDown     = io.NavInputs[ImGuiNavInput_DpadDown];
+		const float axisActivate = io.NavInputs[ImGuiNavInput_Activate];
+		const float axisCancel   = io.NavInputs[ImGuiNavInput_Cancel];
+		const float axisInput    = io.NavInputs[ImGuiNavInput_Input];
+		io.NavInputs[ImGuiNavInput_DpadLeft]  = 0.f;
+		io.NavInputs[ImGuiNavInput_DpadRight] = 0.f;
+		io.NavInputs[ImGuiNavInput_DpadUp]    = 0.f;
+		io.NavInputs[ImGuiNavInput_DpadDown]  = 0.f;
+		io.NavInputs[ImGuiNavInput_Activate]  = 0.f;
+		io.NavInputs[ImGuiNavInput_Cancel]    = 0.f;
+		io.NavInputs[ImGuiNavInput_Input]     = 0.f;
+
+		// While the fade-in animation is still running, only update the held-state
+		// trackers without firing any actions.  This ensures that a button held to
+		// open the keyboard is already marked as "held" by the time the animation
+		// completes, so the rising-edge check suppresses it correctly.
+		if (s_disappearing || eased < 1.0f)
+		{
+			uint8 currDirs = 0;
+			if (axisLeft  > 0.5f) currDirs |= 1;
+			if (axisRight > 0.5f) currDirs |= 2;
+			if (axisUp    > 0.5f) currDirs |= 4;
+			if (axisDown  > 0.5f) currDirs |= 8;
+			swkbdInternalState->navHeldDirs  = currDirs;
+			swkbdInternalState->activateHeld = axisActivate > 0.5f;
+			swkbdInternalState->cancelState  = axisCancel   > 0.5f;
+			swkbdInternalState->returnState  = axisInput    > 0.5f;
+		}
+		else
+		{
+
+		// ── D-pad: edge-triggered grid navigation ────────────────────────────
+		static constexpr int kRowSizes[] = { 12, 11, 11, 11, 4 };
+		static constexpr int kNumRows    = 5;
+
+		int& row = swkbdInternalState->navRow;
+		int& col = swkbdInternalState->navCol;
+
+		uint8 currDirs = 0;
+		if (axisLeft  > 0.5f) currDirs |= 1;
+		if (axisRight > 0.5f) currDirs |= 2;
+		if (axisUp    > 0.5f) currDirs |= 4;
+		if (axisDown  > 0.5f) currDirs |= 8;
+
+		const uint8 pressed = currDirs & ~swkbdInternalState->navHeldDirs;
+		if (pressed & 1) col = (col > 0) ? col - 1 : kRowSizes[row] - 1;
+		if (pressed & 2) col = (col < kRowSizes[row] - 1) ? col + 1 : 0;
+		if (pressed & 4) { if (row > 0)          { --row; col = std::min(col, kRowSizes[row] - 1); } }
+		if (pressed & 8) { if (row < kNumRows-1) { ++row; col = std::min(col, kRowSizes[row] - 1); } }
+		swkbdInternalState->navHeldDirs = currDirs;
+
+		// ── A: activate the highlighted key ──────────────────────────────────
+		const bool activateNow = axisActivate > 0.5f;
+		if (activateNow && !swkbdInternalState->activateHeld)
+		{
+			// Map (row, col) back to a key string using the same arrays as the
+			// render loop.  Row start indices account for the '\n' separators.
+			static constexpr int kRowStart[] = { 0, 13, 25, 37, 49 };
+			const char* kNormal[] = {
+				"1","2","3","4","5","6","7","8","9","0","-",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+				"q","w","e","r","t","y","u","i","o","p","/","\n",
+				"a","s","d","f","g","h","j","k","l",":","'","\n",
+				"z","x","c","v","b","n","m",",",".","?","!","\n",
+				_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+			};
+			const char* kShifted[] = {
+				"#","[","]","$","%","^","&","*","(",")","\x5f",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+				"Q","W","E","R","T","Y","U","I","O","P","@","\n",
+				"A","S","D","F","G","H","J","K","L",";","\"","\n",
+				"Z","X","C","V","B","N","M","<",">","+","=","\n",
+				_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+			};
+			const char* key = (swkbdInternalState->shiftActivated ? kShifted : kNormal)[kRowStart[row] + col];
+			if      (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)             swkbdInternalState->cancelButtonWasPressed = true;
+			else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0) swkbd_keyInput(8);
+			else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)          swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
+			else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)             swkbd_keyInput(13);
+			else                                                                    swkbd_keyInput(*key);
+		}
+		swkbdInternalState->activateHeld = activateNow;
+
+		// ── B: backspace ──────────────────────────────────────────────────────
+		if (axisCancel > 0.5f)
 		{
 			if (!swkbdInternalState->cancelState)
-				swkbd_keyInput(8); // backspace
+				swkbd_keyInput(8);
 			swkbdInternalState->cancelState = true;
 		}
 		else
 			swkbdInternalState->cancelState = false;
 
-		if (io.NavInputs[ImGuiNavInput_Input] > 0)
+		// ── Start: confirm ────────────────────────────────────────────────────
+		if (axisInput > 0.5f)
 		{
 			if (!swkbdInternalState->returnState)
-				swkbd_keyInput(13); // return
+				swkbd_keyInput(13);
 			swkbdInternalState->returnState = true;
 		}
 		else
 			swkbdInternalState->returnState = false;
-	}
+		} // else (animation complete)
+	} // if (mainWindow)
 
 	ImGui::PopFont();
 	ImGui::PopStyleVar(); // fade-in alpha

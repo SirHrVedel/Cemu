@@ -1,0 +1,17 @@
+﻿# scanning 14,667,776 bytes for FPD string anchors
+
+# segment 39  VA 0xe0100000-0xe012088c  R--  filesz=0x2088c
+  VA 0xe0103ef5  file 0x0088c009  'system/fpd/'
+
+# segment 53  VA 0xe3180000-0xe31ac78c  R--  filesz=0x2c78c
+  VA 0xe3180b6c  file 0x00d772d0  'record.bin'
+  VA 0xe31800c2  file 0x00d76826  '/usr/save/system/fpd/%08X/%s'
+  VA 0xe3180122  file 0x00d76886  '/usr/save/system/fpd/%08X'
+  VA 0xe31801f2  file 0x00d76956  '/usr/save/system/fpd'
+  VA 0xe31800b5  file 0x00d76819  'storage_mlc01/usr/save/system/fpd/%08X/%s'
+  VA 0xe3180115  file 0x00d76879  'storage_mlc01/usr/save/system/fpd/%08X'
+  VA 0xe31801e5  file 0x00d76949  'storage_mlc01/usr/save/system/fpd'
+  VA 0xe31800cc  file 0x00d76830  'system/fpd/%08X/%s'
+  VA 0xe318012c  file 0x00d76890  'system/fpd/%08X'
+  VA 0xe31801fc  file 0x00d76960  'system/fpd'
+

@@ -1,0 +1,695 @@
+﻿785 missing exports, grouped:
+
+  MCP                            168
+  __OS                           92
+  (other)                        80
+  FSA                            78
+  PPC                            49
+  OS                             43
+  OSGet                          38
+  FS                             33
+  IM                             29
+  OSSet                          22
+  FSGet                          17
+  OSIs                           13
+  OSDynLoad                      9
+  OSLog                          7
+  OSStop                         5
+  OSTest                         5
+  IPCDriver                      4
+  MEM                            4
+  OSInit                         4
+  OSSave                         4
+  COS                            3
+  DC                             3
+  MEMInit                        3
+  OSLaunch                       3
+  OSLoad                         3
+  OSReport                       3
+  OSSend                         3
+  OSWait                         3
+  OSAlloc                        2
+  OSBlock                        2
+  OSDriver                       2
+  OSSwitch                       2
+  __OSGetCrash                   2
+  __OSSetCrash                   2
+  DisassemblePPCOpcode           1
+  DisassemblePPCRange            1
+  HIOClose                       1
+  HIOInit                        1
+  HIOOpenEx                      1
+  HIORead                        1
+  HIOReadAsyncEx                 1
+  HIOShutdown                    1
+  HIOWrite                       1
+  HIOWriteAsyncEx                1
+  IC                             1
+  IPC                            1
+  LC                             1
+  MEMAdjust                      1
+  MEMAlloc                       1
+  MEMCheck                       1
+  MEMDump                        1
+  MEMGet                         1
+  MEMResize                      1
+  MPPrintTaskQStats              1
+  MasterAgent                    1
+  OSQuery                        1
+  OSRegister                     1
+  OSRequest                      1
+  OSReset                        1
+  OSRun                          1
+  OSScreen                       1
+  OSShutdown                     1
+  OSStart                        1
+  PMBegin                        1
+  PMCycles                       1
+  PMEnd                          1
+  PMInstructions                 1
+  UCClose                        1
+  UCDeleteSysConfig              1
+  UCDeleteSysConfigAsync         1
+  UCListSysConfig                1
+  UCListSysConfigAsync           1
+  UCOpen                         1
+  UCQuerySysConfig               1
+  UCQuerySysConfigAsync          1
+  UCReadSysConfigAsync           1
+  UCWriteSysConfig               1
+  UCWriteSysConfigAsync          1
+  _Exit                          1
+
+=== Detailed list per family (top 20 families) ===
+
+[MCP] (168):
+  MCPFlush_Finalize
+  MCPFlush_FlushLockedRootQuota
+  MCPFlush_FlushRootQuota
+  MCPFlush_GetRootQuotaPath
+  MCPFlush_Initialize
+  MCPFlush_LockRootQuota
+  MCPFlush_RollbackLockedRootQuota
+  MCPFlush_UnlockRootQuota
+  MCP_AocCloseTitle
+  MCP_AocGetOpenInfo
+  MCP_AocLockTitle
+  MCP_AocOpenTitle
+  MCP_AocTestScanned
+  MCP_AocUnlockTitle
+  MCP_AppTagCreate
+  MCP_AppTagFlush
+  MCP_AppTagGetEnability
+  MCP_AppTagGetSize
+  MCP_AppTagReadWithPos
+  MCP_AppTagRemove
+  MCP_AppTagRollback
+  MCP_AppTagSetEnability
+  MCP_AppTagTruncateWithPos
+  MCP_AppTagWriteWithPos
+  MCP_ChangeEcoSettings
+  MCP_ChangeEcoWDSetting
+  MCP_ChangeStandbySettings
+  MCP_ChangeSystemMemoryEmuMode
+  MCP_ChangeSystemMode
+  MCP_CompatCopyFile
+  MCP_CompatExLaunch
+  MCP_CompatExPrepareLaunch
+  MCP_CompatGetVersion
+  MCP_CompatHaiCreateCompanionFile
+  MCP_CompatListOwnedTitles
+  MCP_CompatLoadAVFile
+  MCP_CompatWagonCreateContext
+  MCP_CompatWagonDeleteArchiveHash
+  MCP_CompatWagonDeleteContext
+  MCP_CompatWagonDestinationComplete
+  MCP_CompatWagonDestinationPrepare
+  MCP_CompatWagonSourceComplete
+  MCP_CompatWagonSourcePrepare
+  MCP_CopyGetRequiredSize
+  MCP_CopyTitleAbort
+  MCP_CopyTitleAsync
+  MCP_CopyTitleDoneAsync
+  MCP_CopyTitleWithoutFlushAsync
+  MCP_CreateLinkedTitlePackage
+  MCP_DeleteContentAsync
+  ... and 118 more
+
+[__OS] (92):
+  __OSAcquireIdLock
+  __OSAppendCopyData
+  __OSBoostThreadPriority
+  __OSCalendarTimeToPOSIXTime
+  __OSClearAndEnableInterrupt
+  __OSClearAppCrash
+  __OSClearCopyData
+  __OSClearSavedFrame
+  __OSConsoleWrite
+  __OSDeboostThreadPrioriy
+  __OSDisableInterrupt
+  __OSDisableScheduler
+  __OSDumpActiveThreads
+  __OSEnableScheduler
+  __OSFairSpinLock
+  __OSFairSpinUnlock
+  __OSGetAppCrashControl
+  __OSGetAppFlags
+  __OSGetCopyArea
+  __OSGetCopyDataPtr
+  __OSGetCopyDataSize
+  __OSGetCosReportMasks
+  __OSGetEffectivePriority
+  __OSGetKernelStatistics
+  __OSGetProcDataBounds
+  __OSGetSavedAudioFlags
+  __OSGetSavedFrame
+  __OSGetSavedFrameA
+  __OSGetSavedFrameB
+  __OSGetSavedFrameGammaA
+  __OSGetSavedFrameGammaB
+  __OSGetSavedFramePtr
+  __OSGetSavedFramePtrForRead
+  __OSGetSavedFramePtrForWrite
+  __OSGetSavedFrames
+  __OSGetSavedFramesA
+  __OSGetSavedFramesB
+  __OSGetStatistics
+  __OSGetSwitchTarget
+  __OSGetSymbolName
+  __OSGetTestSetting
+  __OSGetTimestampLevel
+  __OSGetTitleVersion
+  __OSGetTransitionAudioBuffer
+  __OSGetTransitionAudioSize
+  __OSGetWriteGatherRegs
+  __OSHandleECOPowerEventOnBoot
+  __OSHandlePowerEvents
+  __OSIsProcessRunning
+  __OSLogReportKernel
+  ... and 42 more
+
+[(other)] (80):
+  DK_BlockClose
+  DK_BlockOpen
+  DK_BlockRead
+  DK_BlockReadAsync
+  DK_BlockWrite
+  DK_BlockWriteAsync
+  DK_CharClose
+  DK_CharOpen
+  DK_CharRead
+  DK_CharReadAsync
+  DK_CharWrite
+  DK_CharWriteAsync
+  DK_PCharClose
+  DK_PCharFlushWrite
+  DK_PCharGetStatistics
+  DK_PCharOpen
+  DK_PCharReadAsync
+  DK_PCharWrite
+  DK_PCharWriteAsync
+  DK_PPCBlockShimInit
+  DK_PPCCharShimInit
+  DK_ShimInit
+  IOS_CloseAsync
+  IOS_CloseAsyncEx
+  IOS_IoctlAsyncEx
+  IOS_IoctlvAsyncEx
+  IOS_OpenAsync
+  IOS_OpenAsyncEx
+  IOS_Read
+  IOS_ReadAsync
+  IOS_ReadAsyncEx
+  IOS_Seek
+  IOS_SeekAsync
+  IOS_SeekAsyncEx
+  IOS_Write
+  IOS_WriteAsync
+  IOS_WriteAsyncEx
+  NSYSTEST_Do
+  PML1FetchMisses
+  PML1MissCycles
+  __FSAShimAllocateBuffer
+  __FSAShimCheckClientHandle
+  __FSAShimDecodeIosErrorToFsaStatus
+  __FSAShimFreeBuffer
+  __KernelAllocateTimer
+  __KernelFreeTimer
+  __KernelGetInfo
+  __KernelPrimeTimer
+  __KernelSendICI
+  __KernelSetUserModeExHandler
+  ... and 30 more
+
+[FSA] (78):
+  FSAAppendFile
+  FSAAppendFileAsync
+  FSAAppendFileEx
+  FSAAppendFileExAsync
+  FSAChangeDirAsync
+  FSAChangeModeAsync
+  FSACloseDirAsync
+  FSACloseFileAsync
+  FSAFlushFileAsync
+  FSAFlushMultiQuota
+  FSAFlushMultiQuotaAsync
+  FSAFlushQuota
+  FSAFlushQuotaAsync
+  FSAFlushVolume
+  FSAFlushVolumeAsync
+  FSAFreeAsyncResult
+  FSAGetAsyncResult
+  FSAGetBadBlockInfo
+  FSAGetBadBlockInfoAsync
+  FSAGetClientNum
+  FSAGetCwd
+  FSAGetCwdAsync
+  FSAGetDeviceInfoAsync
+  FSAGetDirSize
+  FSAGetDirSizeAsync
+  FSAGetEntryNum
+  FSAGetEntryNumAsync
+  FSAGetError
+  FSAGetErrorAsync
+  FSAGetFileBlockAddress
+  FSAGetFileBlockAddressAsync
+  FSAGetFileSystemInfo
+  FSAGetFileSystemInfoAsync
+  FSAGetFragmentBlockInfo
+  FSAGetFragmentBlockInfoAsync
+  FSAGetFreeSpaceSizeAsync
+  FSAGetJournalFreeSpaceSize
+  FSAGetJournalFreeSpaceSizeAsync
+  FSAGetPosFile
+  FSAGetPosFileAsync
+  FSAGetStatAsync
+  FSAGetStatFileAsync
+  FSAGetTransactionBlockPoolAttributes
+  FSAGetVolumeInfo
+  FSAGetVolumeInfoAsync
+  FSAIsEof
+  FSAIsEofAsync
+  FSAMakeDirAsync
+  FSAMakeQuota
+  FSAMakeQuotaAsync
+  ... and 28 more
+
+[PPC] (49):
+  PPCAndCMsr
+  PPCAndMsr
+  PPCDisableSpeculation
+  PPCEieio
+  PPCEnableSpeculation
+  PPCHalt
+  PPCIsync
+  PPCMfdec
+  PPCMfdmaL
+  PPCMfdmaU
+  PPCMffpscr
+  PPCMfhid0
+  PPCMfhid1
+  PPCMfhid2
+  PPCMfhid4
+  PPCMfl2cr
+  PPCMfmmcr0
+  PPCMfmmcr1
+  PPCMfmsr
+  PPCMfpir
+  PPCMfpmc1
+  PPCMfpmc2
+  PPCMfpmc3
+  PPCMfpmc4
+  PPCMfpvr
+  PPCMfsia
+  PPCMfsprg0
+  PPCMfwpar
+  PPCMtdec
+  PPCMtdmaL
+  PPCMtdmaU
+  PPCMtfpscr
+  PPCMthid0
+  PPCMthid2
+  PPCMthid4
+  PPCMtl2cr
+  PPCMtmmcr0
+  PPCMtmmcr1
+  PPCMtmsr
+  PPCMtpmc1
+  PPCMtpmc2
+  PPCMtpmc3
+  PPCMtpmc4
+  PPCMtsia
+  PPCMtwpar
+  PPCOrMsr
+  PPCSetFpIEEEMode
+  PPCSetFpNonIEEEMode
+  PPCSync
+
+[OS] (43):
+  OSAndAtomic
+  OSCancelAlarms
+  OSCheckActiveThreads
+  OSCheckStopwatch
+  OSCheckThreadStackUsage
+  OSClearContext
+  OSClearStack
+  OSClearThreadStackUsage
+  OSCoherencyBarrier
+  OSCopyToClipboard
+  OSDeRegisterSystemModeCallback
+  OSDisableAllThreadFPUException
+  OSDisableContextFPUException
+  OSDisableOverlayArena
+  OSDisableOverlayArenaDev
+  OSDisableOverlayArenaWithTimeout
+  OSDisableOverlayArenaWithTimeoutDev
+  OSDisableThreadFPUException
+  OSDumpContext
+  OSDumpStopwatch
+  OSEnableAllThreadFPUException
+  OSEnableForegroundExit
+  OSEnableOverlayArenaDev
+  OSEnableOverlayArenaWithTimeout
+  OSEnableOverlayArenaWithTimeoutDev
+  OSEnableThreadFPUException
+  OSEnforceInorderIO
+  OSForceFullRelaunch
+  OSFreeSysHealth
+  OSFreeToSystem
+  OSHandle_AddRef
+  OSHandle_Alloc
+  OSHandle_InitTable
+  OSHandle_Release
+  OSHandle_TranslateAndAddRef
+  OSIopShell_InjectCommand
+  OSOrAtomic
+  OSRebootCrash
+  OSReschedule
+  OSRestartCrashedApp
+  OSSupressConsoleOutput
+  OSXorAtomic
+  OSXorAtomic64
+
+[OSGet] (38):
+  OSGetActiveThreadLink
+  OSGetAlarmFromQueue
+  OSGetArgcArgv
+  OSGetCallArgs
+  OSGetCodegenCore
+  OSGetCodegenMode
+  OSGetCrashDetailLevel
+  OSGetCrashDumpType
+  OSGetCrashInfo
+  OSGetCurrentContext
+  OSGetCurrentFPUContext
+  OSGetCurrentPMState
+  OSGetDataPhysAddrRange
+  OSGetDefaultAppIOQueue
+  OSGetHardwareBoardRevision
+  OSGetHardwareBoardType
+  OSGetHardwareVersion
+  OSGetInfo
+  OSGetLastError
+  OSGetLastPMState
+  OSGetMapVirtAddrRange
+  OSGetOSID
+  OSGetOverlayArenaRange
+  OSGetOverlayArenaRangeDev
+  OSGetPerformanceNumbers
+  OSGetProcessInfo
+  OSGetScreenCapturePermission
+  OSGetScreenCapturePermissionEx
+  OSGetSecCodeGenMode
+  OSGetSecurityLevel
+  OSGetShutdownFlags
+  OSGetShutdownReason
+  OSGetSymbolName
+  OSGetSysHealth
+  OSGetSystemVersion
+  OSGetThreadCoreTime
+  OSGetTimestampLevel
+  OSGetUserStackPointer
+
+[FS] (33):
+  FSBindMountAsync
+  FSBindUnmount
+  FSBindUnmountAsync
+  FSCancelAllCommands
+  FSCancelCommand
+  FSChangeMode
+  FSChangeModeAsync
+  FSDumpLastErrorLog
+  FSFlushFile
+  FSFlushFileAsync
+  FSFlushMultiQuota
+  FSFlushMultiQuotaAsync
+  FSMakeLink
+  FSMakeLinkAsync
+  FSMakeQuota
+  FSMakeQuotaAsync
+  FSMountAsync
+  FSOpenFileByStat
+  FSOpenFileByStatAsync
+  FSRegisterFlushQuota
+  FSRegisterFlushQuotaAsync
+  FSRemoveQuota
+  FSRemoveQuotaAsync
+  FSRewindDir
+  FSRewindDirAsync
+  FSRollbackQuota
+  FSRollbackQuotaAsync
+  FSSetCmdPriority
+  FSSetEmulatedError
+  FSSetStateChangeNotification
+  FSTimeToCalendarTime
+  FSUnmount
+  FSUnmountAsync
+
+[IM] (29):
+  IMDisableAPD
+  IMDisableDim
+  IMEnableAPD
+  IMEndAPDVideoMode
+  IMGetDimEnableDRC
+  IMGetDimEnableTV
+  IMGetDimPeriod
+  IMIsAPDEnabled
+  IMSetDimEnableDRC
+  IMSetDimEnableTV
+  IMStartAPDVideoMode
+  IM_CancelGetEventNotify
+  IM_Close
+  IM_GetEventNotify
+  IM_GetNvParameter
+  IM_GetNvParameterWithoutHandleAndItb
+  IM_GetParameters
+  IM_GetTimerRemaining
+  IM_GetTimerRemainingSeconds
+  IM_Open
+  IM_SetDeviceState
+  IM_SetDeviceStateEx
+  IM_SetHomeButtonParams
+  IM_SetNvParameter
+  IM_SetNvParameterWithoutHandleAndItb
+  IM_SetParameter
+  IM_SetRuntimeParameter
+  IM_SetSystemPolicy
+  IM_SetTimerElpasedSeconds
+
+[OSSet] (22):
+  OSSetAlarmEx
+  OSSetAlarmTag
+  OSSetCrashDetailLevel
+  OSSetCrashDumpType
+  OSSetCurrentContext
+  OSSetCurrentFPUContext
+  OSSetDABR
+  OSSetExceptionCallback
+  OSSetExceptionCallbackEx
+  OSSetIABR
+  OSSetInfo
+  OSSetMemBound
+  OSSetPanicCallback
+  OSSetPerformanceMonitor
+  OSSetPeriodicAlarmEx
+  OSSetScreenCapturePermission
+  OSSetScreenCapturePermissionEx
+  OSSetSwitchThreadCallback
+  OSSetThreadCancelState
+  OSSetThreadRunQuantum
+  OSSetThreadStackUsage
+  OSSetTimestampLevel
+
+[FSGet] (17):
+  FSGetCmdPriority
+  FSGetDirSize
+  FSGetDirSizeAsync
+  FSGetEmulatedError
+  FSGetEntryNum
+  FSGetEntryNumAsync
+  FSGetFSMessage
+  FSGetFileBlockAddress
+  FSGetFileBlockAddressAsync
+  FSGetFileSystemInfo
+  FSGetFileSystemInfoAsync
+  FSGetLastError
+  FSGetMountSourceAsync
+  FSGetMountSourceNextAsync
+  FSGetStateChangeInfo
+  FSGetVolumeInfo
+  FSGetVolumeInfoAsync
+
+[OSIs] (13):
+  OSIsAddressValid
+  OSIsBlockThreadsOnExit
+  OSIsColdBoot
+  OSIsCompatBoot
+  OSIsECOBoot
+  OSIsECOMode
+  OSIsEnabledOverlayArenaDev
+  OSIsInterruptEnabled
+  OSIsNormalBoot
+  OSIsProdMode
+  OSIsSchedulerLocked
+  OSIsSelfRefreshBoot
+  OSIsStandbyBoot
+
+[OSDynLoad] (9):
+  OSDynLoad_AcquireContainingModule
+  OSDynLoad_AddNofifyCallback
+  OSDynLoad_AddNotifyCallback
+  OSDynLoad_DelNotifyCallback
+  OSDynLoad_FindTag
+  OSDynLoad_GetLoaderHeapStatistics
+  OSDynLoad_GetModuleName
+  OSDynLoad_GetNumberOfRPLs
+  OSDynLoad_GetRPLInfo
+
+[OSLog] (7):
+  OSLogArgs
+  OSLogBuffer
+  OSLogFunc
+  OSLogReport
+  OSLogRetrieve
+  OSLogSaveCrashDump
+  OSLogSetFilterPolicy
+
+[OSStop] (5):
+  OSStopStopwatch
+  OSStopWatchLap
+  OSStopWatchReset
+  OSStopWatchStart
+  OSStopWatchStop
+
+[OSTest] (5):
+  OSTestAndClearAtomic
+  OSTestAndClearAtomic64
+  OSTestAndSetAtomic
+  OSTestAndSetAtomic64
+  OSTest_Do
+
+[IPCDriver] (4):
+  IPCDriverClose
+  IPCDriverDisplayStatistics
+  IPCDriverInit
+  IPCDriverOpen
+
+[MEM] (4):
+  MEMFindParentHeap
+  MEMInsertListObject
+  MEMUseMarginOfAlignmentForExpHeap
+  MEMiIsEmptyExpHeap
+
+[OSInit] (4):
+  OSInitAlarmQueue
+  OSInitAlarmQueueEx
+  OSInitContext
+  OSInitStopwatch
+
+[OSSave] (4):
+  OSSaveContext
+  OSSaveCoroutine
+  OSSaveFPUContext
+  OSSavesDone_ReadyToRelease
+
+[COS] (3):
+  COSError
+  COSInfo
+  COSVerbose
+
+[DC] (3):
+  DCBlockFlush
+  DCCoreFlushAll
+  DCTouchRange
+
+[MEMInit] (3):
+  MEMInitAllocatorForBlockHeap
+  MEMInitAllocatorForFrmHeap
+  MEMInitAllocatorForUnitHeap
+
+[OSLaunch] (3):
+  OSLaunchTitleByPathv
+  OSLaunchTitlel
+  OSLaunchTitlev
+
+[OSLoad] (3):
+  OSLoadContext
+  OSLoadCoroutine
+  OSLoadFPUContext
+
+[OSReport] (3):
+  OSReportInfo
+  OSReportVerbose
+  OSReportWarn
+
+[OSSend] (3):
+  OSSendAppSwitchRequest
+  OSSendFatalError
+  OSSendPolicyRequest
+
+[OSWait] (3):
+  OSWaitAlarm
+  OSWaitMicroseconds
+  OSWaitRendezvousWithTimeout
+
+[OSAlloc] (2):
+  OSAllocFromSystem
+  OSAllocSysHealth
+
+[OSBlock] (2):
+  OSBlockLogSave
+  OSBlockThreadsOnExit
+
+[OSDriver] (2):
+  OSDriver_CopyFromSaveArea
+  OSDriver_CopyToSaveArea
+
+[OSSwitch] (2):
+  OSSwitchFiber
+  OSSwitchStack
+
+[__OSGetCrash] (2):
+  __OSGetCrashDetailLevel
+  __OSGetCrashRecovery
+
+[__OSSetCrash] (2):
+  __OSSetCrashDetailLevel
+  __OSSetCrashRecovery
+
+[DisassemblePPCOpcode] (1):
+  DisassemblePPCOpcode
+
+[DisassemblePPCRange] (1):
+  DisassemblePPCRange
+
+[HIOClose] (1):
+  HIOClose
+
+[HIOInit] (1):
+  HIOInit
+
+[HIOOpenEx] (1):
+  HIOOpenEx
+
+[HIORead] (1):
+  HIORead

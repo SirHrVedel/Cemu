@@ -1,0 +1,103 @@
+﻿# .fexports: 92 entries
+  related: AddFriendRequestAsync__Q2_2nn2fpFPCQ3_2nn2fp18RecentPlayRecordExPCwPFQ2_2nn6ResultPv_vPv @ VA 0x020065a8
+  related: AddRecentPlayRecordEx__Q2_2nn2fpFPCQ3_2nn2fp18RecentPlayRecordExUi @ VA 0x02006d14
+  related: AddRecentPlayRecord__Q2_2nn2fpFPCQ3_2nn2fp16RecentPlayRecordUi @ VA 0x020044d4
+  related: DeleteRecentPlayRecordAll__Q2_2nn2fpFv @ VA 0x02006e9c
+  -> GetRecentPlayRecord__Q2_2nn2fpFPQ3_2nn2fp18RecentPlayRecordExPUiUiT3 @ VA 0x02005134
+  related: IsRecentPlayRecordCorrupted__Q2_2nn2fpFv @ VA 0x0200529c
+
+Disasm 0x02005134 size=0x168 (symtab size=0x168)
+
+  0x02005134: 9421ffd8 stwu     r1, -0x28(r1)
+  0x02005138: bf610014 stmw     r27, 0x14(r1)
+  0x0200513c: 7c0802a6 mflr     r0
+  0x02005140: 9001002c stw      r0, 0x2c(r1)
+  0x02005144: 90a1000c stw      r5, 0xc(r1)
+  0x02005148: 7c7d1b78 mr       r29, r3
+  0x0200514c: 7c9f2378 mr       r31, r4
+  0x02005150: 90c10008 stw      r6, 8(r1)
+  0x02005154: 4bffb19d bl       0x20002f0  ; -> sub_020002f0
+  0x02005158: 7c7c1b78 mr       r28, r3
+  0x0200515c: 48005335 bl       0x200a490  ; -> sub_0200a490
+  0x02005160: 3f601000 lis      r27, 0x1000
+  0x02005164: 853b0400 lwzu     r9, 0x400(r27)
+  0x02005168: 2c09ffff cmpwi    r9, -1
+  0x0200516c: 4082002c bne      0x2005198
+  0x02005170: 3fe0c0c0 lis      r31, -0x3f40
+  0x02005174: 7f83e378 mr       r3, r28
+  0x02005178: 3bff0580 addi     r31, r31, 0x580
+  0x0200517c: 480056f5 bl       0x200a870  ; -> sub_0200a870
+  0x02005180: 7fe3fb78 mr       r3, r31
+  0x02005184: bb610014 lmw      r27, 0x14(r1)
+  0x02005188: 8001002c lwz      r0, 0x2c(r1)
+  0x0200518c: 7c0803a6 mtlr     r0
+  0x02005190: 38210028 addi     r1, r1, 0x28
+  0x02005194: 4e800020 blr      
+  0x02005198: 7faafb79 or.      r10, r29, r31
+  0x0200519c: 41820010 beq      0x20051ac
+  0x020051a0: 8141000c lwz      r10, 0xc(r1)
+  0x020051a4: 280a0064 cmplwi   r10, 0x64
+  0x020051a8: 4180002c blt      0x20051d4
+  0x020051ac: 3fe0c0c0 lis      r31, -0x3f40
+  0x020051b0: 7f83e378 mr       r3, r28
+  0x020051b4: 3bff0680 addi     r31, r31, 0x680
+  0x020051b8: 480056b9 bl       0x200a870  ; -> sub_0200a870
+  0x020051bc: 7fe3fb78 mr       r3, r31
+  0x020051c0: bb610014 lmw      r27, 0x14(r1)
+  0x020051c4: 8001002c lwz      r0, 0x2c(r1)
+  0x020051c8: 7c0803a6 mtlr     r0
+  0x020051cc: 38210028 addi     r1, r1, 0x28
+  0x020051d0: 4e800020 blr      
+  0x020051d4: 81810008 lwz      r12, 8(r1)
+  0x020051d8: 7d6a6214 add      r11, r10, r12
+  0x020051dc: 280b0064 cmplwi   r11, 0x64
+  0x020051e0: 4081000c ble      0x20051ec
+  0x020051e4: 200a0064 subfic   r0, r10, 0x64
+  0x020051e8: 90010008 stw      r0, 8(r1)
+  0x020051ec: 4bffb111 bl       0x20002fc  ; -> sub_020002fc
+  0x020051f0: 80010008 lwz      r0, 8(r1)
+  0x020051f4: 1d600068 mulli    r11, r0, 0x68
+  0x020051f8: 38a00002 li       r5, 2
+  0x020051fc: 380b0004 addi     r0, r11, 4
+  0x02005200: 38804fb1 li       r4, 0x4fb1  ; r4 = 0x4fb1  (candidate request id)
+  0x02005204: 5407003a rlwinm   r7, r0, 0, 0, 0x1d
+  0x02005208: 7ca62b78 mr       r6, r5
+  0x0200520c: 38e70018 addi     r7, r7, 0x18
+  0x02005210: 7c7e1b78 mr       r30, r3
+  0x02005214: 4bffb38d bl       0x20005a0  ; -> sub_020005a0
+  0x02005218: 7fa5eb79 or.      r5, r29, r29
+  0x0200521c: 4182000c beq      0x2005228
+  0x02005220: 81010008 lwz      r8, 8(r1)
+  0x02005224: 1ca80068 mulli    r5, r8, 0x68
+  0x02005228: 7fa4eb78 mr       r4, r29
+  0x0200522c: 7fc3f378 mr       r3, r30
+  0x02005230: 4bffb4e1 bl       0x2000710  ; -> sub_02000710
+  0x02005234: 7fe5fb79 or.      r5, r31, r31
+  0x02005238: 41820008 beq      0x2005240
+  0x0200523c: 38a00004 li       r5, 4
+  0x02005240: 7fe4fb78 mr       r4, r31
+  0x02005244: 7fc3f378 mr       r3, r30
+  0x02005248: 4bffb4c9 bl       0x2000710  ; -> sub_02000710
+  0x0200524c: 38a00004 li       r5, 4
+  0x02005250: 3881000c addi     r4, r1, 0xc
+  0x02005254: 7fc3f378 mr       r3, r30
+  0x02005258: 4bffb509 bl       0x2000760  ; -> sub_02000760
+  0x0200525c: 38a00004 li       r5, 4
+  0x02005260: 38810008 addi     r4, r1, 8
+  0x02005264: 7fc3f378 mr       r3, r30
+  0x02005268: 4bffb4f9 bl       0x2000760  ; -> sub_02000760
+  0x0200526c: 809b0000 lwz      r4, 0(r27)
+  0x02005270: 7fc3f378 mr       r3, r30
+  0x02005274: 4bffb691 bl       0x2000904  ; -> sub_02000904
+  0x02005278: 7c7f1b78 mr       r31, r3
+  0x0200527c: 7f83e378 mr       r3, r28
+  0x02005280: 480055f1 bl       0x200a870  ; -> sub_0200a870
+  0x02005284: 7fe3fb78 mr       r3, r31
+  0x02005288: bb610014 lmw      r27, 0x14(r1)
+  0x0200528c: 8001002c lwz      r0, 0x2c(r1)
+  0x02005290: 7c0803a6 mtlr     r0
+  0x02005294: 38210028 addi     r1, r1, 0x28
+  0x02005298: 4e800020 blr      
+
+# request-id candidates (small constants loaded in fn):
+  pc=0x02005200: 0x4fb1 (20401) via li

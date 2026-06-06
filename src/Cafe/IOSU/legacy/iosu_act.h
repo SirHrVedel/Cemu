@@ -133,7 +133,6 @@ struct iosuActCemuRequest_t
 #define IOSU_ARC_PASSWORDCACHEENABLED	0x0F
 #define IOSU_ARC_ENABLE_PASSWORD_CACHE	0x10
 #define IOSU_ARC_SET_DEFAULT_ACCOUNT	0x11
-#define IOSU_ARC_UNLOAD_CONSOLE_ACCOUNT	0x12
 
 uint32 iosuAct_getAccountIdOfCurrentAccount();
 

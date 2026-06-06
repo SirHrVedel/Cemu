@@ -267,22 +267,6 @@ namespace act
 			return 0;
 		}
 
-		nnResult UnloadConsoleAccount()
-		{
-			// Mirrors RPL @ 0x0200B0BC..B0F4: same init-flag guard as
-			// LoadConsoleAccount. On real hw this drops the loaded ACT
-			// session and any cached fields the act module pre-fetched. In
-			// Cemu we just clear _loadedAccountSlot + the ActiveSettings
-			// session override so subsequent ACT_SLOT_CURRENT queries fall
-			// back to the boot persistent id and NAPI follows the GUI's
-			// selection again.
-			if (g_initializeCount == 0)
-				return ACTResult_NotInitialized;
-			actPrepareRequest2();
-			actRequest->requestCode = IOSU_ARC_UNLOAD_CONSOLE_ACCOUNT;
-			return _doCemuActRequest(actRequest);
-		}
-
 		nnResult LoadConsoleAccount(uint8 slot, uint32 option, const char* password, bool flag)
 		{
 			// Mirrors RPL @ 0x0200AF38..AF60: check the act init flag first.
@@ -900,7 +884,6 @@ namespace nn::act
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabled, "nn_act", "IsPasswordCacheEnabled__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::IsPasswordCacheEnabledEx, "nn_act", "IsPasswordCacheEnabledEx__Q2_2nn3actFUc", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::LoadConsoleAccount, "nn_act", "LoadConsoleAccount__Q2_2nn3actFUc13ACTLoadOptionPCcb", LogType::Placeholder);
-			cafeExportRegisterFunc(nn::act::UnloadConsoleAccount, "nn_act", "UnloadConsoleAccount__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::Cancel, "nn_act", "Cancel__Q2_2nn3actFv", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::EnableAccountPasswordCache, "nn_act", "EnableAccountPasswordCache__Q2_2nn3actFb", LogType::Placeholder);
 			cafeExportRegisterFunc(nn::act::SetDefaultAccount, "nn_act", "SetDefaultAccount__Q2_2nn3actFUc", LogType::Placeholder);

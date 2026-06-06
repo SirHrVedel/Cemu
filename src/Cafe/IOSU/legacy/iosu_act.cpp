@@ -1079,49 +1079,65 @@ int iosuAct_thread()
 				(void)actCemuRequest->loadOption;
 				(void)actCemuRequest->loadFlag;
 
-				if (actCemuRequest->loadPassword[0] != '\0')
 				{
-					const size_t pwLen = strnlen(actCemuRequest->loadPassword,
-					                             sizeof(actCemuRequest->loadPassword) - 1);
-					const uint32 principalId = _actAccountData[accountIndex].principalId;
-
-					// AccountPasswordHash = makePWHash(AccountPasswordCache, principalId)
-					// AccountPasswordCache = makePWHash(plaintext,           principalId)
-					// Both keyed by PrincipalId (verified against real account.dat).
-					uint8 computedCache[32];
-					makePWHash((uint8*)actCemuRequest->loadPassword, (sint32)pwLen,
-					           principalId, computedCache);
-					uint8 computedHash[32];
-					makePWHash(computedCache, 32, principalId, computedHash);
-
 					const uint8* storedHash = _actAccountData[accountIndex].accountPasswordHash;
 					const bool storedHashSet = std::any_of(storedHash, storedHash + 32,
 					                                       [](uint8 b) { return b != 0; });
 
-					if (storedHashSet && memcmp(computedHash, storedHash, 32) != 0)
+					if (actCemuRequest->loadPassword[0] == '\0')
 					{
-						// Wrong password. Caller (system menu) will re-prompt.
-						// TODO: identify the exact real-hw error code for this case;
-						// using ACTResult_InvalidValue as a placeholder.
-						ioctlReturnValue = 0;
-						actCemuRequest->setACTReturnCode(ACTResult_InvalidValue);
-						actCemuRequest->resultU32.u32 = 0;
-						iosuIoctl_completeRequest(ioQueueEntry, ioctlReturnValue);
-						continue;
+						// Empty password: native swkbd prevents this but Cemu's does not.
+						// Reject so the system menu re-prompts rather than silently loading
+						// the account without a valid password cache.
+						if (storedHashSet)
+						{
+							ioctlReturnValue = 0;
+							actCemuRequest->setACTReturnCode(ACTResult_InvalidValue);
+							actCemuRequest->resultU32.u32 = 0;
+							iosuIoctl_completeRequest(ioQueueEntry, ioctlReturnValue);
+							continue;
+						}
 					}
+					else
+					{
+						const size_t pwLen = strnlen(actCemuRequest->loadPassword,
+						                             sizeof(actCemuRequest->loadPassword) - 1);
+						const uint32 principalId = _actAccountData[accountIndex].principalId;
 
-					// Password verified (or no stored hash to compare against):
-					// 1. Refresh the IOSU slot cache with the new bytes so any
-					//    in-process ACT consumer reading _actAccountData picks it up.
-					// 2. Mirror the same bytes into the Account object via
-					//    ApplyPasswordToAccount(persist=false). NAPI reads
-					//    Account::GetAccountPasswordCache() directly, so this is
-					//    what actually grants online access for the new account.
-					memcpy(_actAccountData[accountIndex].accountPasswordCache, computedCache, 32);
-					Account::ApplyPasswordToAccount(
-						_actAccountData[accountIndex].persistentId,
-						std::string_view(actCemuRequest->loadPassword, pwLen),
-						/*persist*/ false);
+						// AccountPasswordHash = makePWHash(AccountPasswordCache, principalId)
+						// AccountPasswordCache = makePWHash(plaintext,           principalId)
+						// Both keyed by PrincipalId (verified against real account.dat).
+						uint8 computedCache[32];
+						makePWHash((uint8*)actCemuRequest->loadPassword, (sint32)pwLen,
+						           principalId, computedCache);
+						uint8 computedHash[32];
+						makePWHash(computedCache, 32, principalId, computedHash);
+
+						if (storedHashSet && memcmp(computedHash, storedHash, 32) != 0)
+						{
+							// Wrong password. Caller (system menu) will re-prompt.
+							// TODO: identify the exact real-hw error code for this case;
+							// using ACTResult_InvalidValue as a placeholder.
+							ioctlReturnValue = 0;
+							actCemuRequest->setACTReturnCode(ACTResult_InvalidValue);
+							actCemuRequest->resultU32.u32 = 0;
+							iosuIoctl_completeRequest(ioQueueEntry, ioctlReturnValue);
+							continue;
+						}
+
+						// Password verified (or no stored hash to compare against):
+						// 1. Refresh the IOSU slot cache with the new bytes so any
+						//    in-process ACT consumer reading _actAccountData picks it up.
+						// 2. Mirror the same bytes into the Account object via
+						//    ApplyPasswordToAccount(persist=false). NAPI reads
+						//    Account::GetAccountPasswordCache() directly, so this is
+						//    what actually grants online access for the new account.
+						memcpy(_actAccountData[accountIndex].accountPasswordCache, computedCache, 32);
+						Account::ApplyPasswordToAccount(
+							_actAccountData[accountIndex].persistentId,
+							std::string_view(actCemuRequest->loadPassword, pwLen),
+							/*persist*/ false);
+					}
 				}
 
 				const uint8 newSlot = (uint8)(accountIndex + 1);

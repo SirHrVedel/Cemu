@@ -118,7 +118,7 @@ wxPasswordPromptDialog::wxPasswordPromptDialog(wxWindow* parent, wxString miiNam
 	// OK/Cancel pair on the right. This is the themed replacement for the
 	// previous wxMessageBox "Launch in offline mode?" prompt.
 	m_offline_button = new wxButton(this, wxID_ANY, _("Offline Mode"));
-	m_offline_button->SetToolTip(_("skip account password and launch in offline mode"));
+	m_offline_button->SetToolTip(_("Skip account password and temporarily launch in offline mode"));
 	m_offline_button->Bind(wxEVT_BUTTON, &wxPasswordPromptDialog::OnLaunchOffline, this);
 	button_sizer->Add(m_offline_button, 0, wxALL, 5);
 

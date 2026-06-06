@@ -473,9 +473,9 @@ void swkbd_render(bool mainWindow)
 	const auto baseFont = ImGui_GetFont(kBaseFontSz);
 	if (!baseFont)
 		return; // font queued for loading; renders correctly next frame
-	const float kbdScale   = (36.0f * scale) / kBaseFontSz;
+	const float kbdScale   = (52.0f * scale) / kBaseFontSz;
 	const float inputScale = (52.0f * scale) / kBaseFontSz;
-	const float infoScale  = (40.0f * scale) / kBaseFontSz;
+	const float infoScale  = (52.0f * scale) / kBaseFontSz;
 
 	// ── Layout metrics ────────────────────────────────────────────────────────
 	const float kWinPadX  = ImGui::GetStyle().WindowPadding.x;

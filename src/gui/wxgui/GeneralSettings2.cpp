@@ -889,44 +889,36 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		mii_border_panel->SetSizer(mii_border_sizer);
 		mii_border_panel->Fit();
 
-		// Account controls in the original 4-column grid, independent of the
-		// Mii image so button sizes are unaffected by the image width.
-		auto* content = new wxFlexGridSizer(0, 4, 0, 0);
-		content->SetFlexibleDirection(wxBOTH);
-		content->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
-		content->AddGrowableCol(1, 1);
-		content->AddGrowableCol(2, 0);
-		content->AddGrowableCol(3, 0);
+		// "Active account" label sits above the picker row.
+		auto* right_col = new wxBoxSizer(wxVERTICAL);
+		right_col->Add(new wxStaticText(box, wxID_ANY, _("Active account")), 0, wxLEFT | wxRIGHT | wxTOP, 5);
 
-		content->Add(new wxStaticText(box, wxID_ANY, _("Active account")), 1, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-
+		auto* account_row = new wxBoxSizer(wxHORIZONTAL);
 		m_active_account = new wxChoice(box, wxID_ANY);
 		m_active_account->SetMinSize({ 250, -1 });
-		content->Add(m_active_account, 0, wxEXPAND | wxALL, 5);
+		account_row->Add(m_active_account, 1, wxEXPAND | wxALL, 5);
 		m_active_account->Bind(wxEVT_CHOICE, &GeneralSettings2::OnActiveAccountChanged, this);
 
 		m_create_account = new wxButton(box, wxID_ANY, _("Create"));
-		content->Add(m_create_account, 0, wxEXPAND | wxALL | wxALIGN_RIGHT, 5);
+		account_row->Add(m_create_account, 0, wxALL, 5);
 		m_create_account->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountCreate, this);
 
 		m_delete_account = new wxButton(box, wxID_ANY, _("Delete"));
-		content->Add(m_delete_account, 0, wxEXPAND | wxALL | wxALIGN_RIGHT, 5);
+		account_row->Add(m_delete_account, 0, wxALL, 5);
 		m_delete_account->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountDelete, this);
 
-		// Spacer in column 0 so the "Remove password cache" button aligns under
-		// the active account dropdown rather than under the "Active account" label.
-		content->Add(0, 0, 0, wxEXPAND, 0);
-
-		m_remove_password_cache = new wxButton(box, wxID_ANY, _("Remove password cache"));
-		m_remove_password_cache->SetToolTip(_("Clears the saved AccountPasswordCache for the selected account. You will be prompted for the password again next time you launch a title with this account."));
-		content->Add(m_remove_password_cache, 0, wxEXPAND | wxALL, 5);
+		m_remove_password_cache = new wxButton(box, wxID_ANY, _("Clear password"));
+		m_remove_password_cache->SetToolTip(_("Clears the saved password cache for the selected account."));
 		m_remove_password_cache->Bind(wxEVT_BUTTON, &GeneralSettings2::OnAccountRemovePasswordCache, this);
-		m_remove_password_cache->Enable(false); // gated by UpdateAccountInformation()
+		m_remove_password_cache->Enable(false);
+		account_row->Add(m_remove_password_cache, 0, wxALL, 5);
+
+		right_col->Add(account_row, 0, wxEXPAND);
 
 		// Mii on the far left, account controls to the right.
 		auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
 		row_sizer->Add(mii_border_panel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
-		row_sizer->Add(content, 1, wxEXPAND);
+		row_sizer->Add(right_col, 1, wxEXPAND);
 		box_sizer->Add(row_sizer, 0, wxEXPAND);
 
 		online_panel_sizer->Add(box_sizer, 0, wxEXPAND | wxALL, 5);
@@ -952,7 +944,7 @@ wxPanel* GeneralSettings2::AddAccountPage(wxNotebook* notebook)
 		m_active_service->SetItemToolTip(2, _("Connect to the Pretendo Network Service"));
 		m_active_service->SetItemToolTip(3, _("Connect to a custom Network Service (configured via network_services.xml)"));
 
-		m_active_service->Bind(wxEVT_RADIOBOX, &GeneralSettings2::OnAccountServiceChanged,this);
+		m_active_service->Bind(wxEVT_RADIOBOX, &GeneralSettings2::OnAccountServiceChanged, this);
 		online_panel_sizer->Add(m_active_service, 0, wxEXPAND | wxALL, 5);
 
 		if (CafeSystem::IsTitleRunning())
@@ -2422,8 +2414,8 @@ void GeneralSettings2::OnActiveAccountChanged(wxCommandEvent& event)
 void GeneralSettings2::OnAccountServiceChanged(wxCommandEvent& event)
 {
 	auto& config = GetConfig();
-	uint32 peristentId = GetSelectedAccountPersistentId();
-	config.SetAccountSelectedService(peristentId, static_cast<NetworkService>(m_active_service->GetSelection()));
+	uint32 persistentId = GetSelectedAccountPersistentId();
+	config.SetAccountSelectedService(persistentId, static_cast<NetworkService>(m_active_service->GetSelection()));
 	UpdateAccountInformation();
 }
 

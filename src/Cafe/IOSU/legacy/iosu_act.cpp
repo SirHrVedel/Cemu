@@ -953,39 +953,22 @@ int iosuAct_thread()
 				// survives a Cemu restart. We also update _loadedAccountSlot
 				// + the session ActiveSettings override so the rest of this
 				// title sees the new default immediately.
-				//
-				// Slot 0 means "clear the default account" (force user-select on
-				// next boot). On real hw this is written into common.dat. Cemu
-				// does not support common.dat, so we treat slot 0 as a no-op:
-				// the user's GUI account selection in CemuConfig is preserved and
-				// the session active-account state is left intact. Without this
-				// guard the handler would access _actAccountData[-1] (UB) and
-				// overwrite config.m_persistent_id with garbage, breaking the
-				// password prompt on the next cold start.
-				if (actCemuRequest->accountSlot == 0)
-				{
-					cemuLog_log(LogType::Force, "IOSU_ACT: SetDefaultAccount(0) - clearing default (no-op, common.dat not supported)");
-					actCemuRequest->setACTReturnCode(0);
-				}
-				else
-				{
-					accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
-					_cancelIfAccountDoesNotExist();
+				accountIndex = iosuAct_getAccountIndexBySlot(actCemuRequest->accountSlot);
+				_cancelIfAccountDoesNotExist();
 
-					const uint32 pid = _actAccountData[accountIndex].persistentId;
-					GetConfig().account.m_persistent_id = pid;
-					GetConfigHandle().Save();
+				const uint32 pid = _actAccountData[accountIndex].persistentId;
+				GetConfig().account.m_persistent_id = pid;
+				GetConfigHandle().Save();
 
-					_loadedAccountSlot = (uint8)(accountIndex + 1);
-					ActiveSettings::SetSessionPersistentIdOverride(pid);
+				_loadedAccountSlot = (uint8)(accountIndex + 1);
+				ActiveSettings::SetSessionPersistentIdOverride(pid);
 
-					const auto& chosen = Account::GetAccount(pid);
-					cemuLog_log(LogType::Force, "IOSU_ACT: new default account {} (slot {}, pid {:#010x})",
-						boost::nowide::narrow(std::wstring(chosen.GetMiiName())),
-						_loadedAccountSlot, pid);
+				const auto& chosen = Account::GetAccount(pid);
+				cemuLog_log(LogType::Force, "IOSU_ACT: new default account {} (slot {}, pid {:#010x})",
+					boost::nowide::narrow(std::wstring(chosen.GetMiiName())),
+					_loadedAccountSlot, pid);
 
-					actCemuRequest->setACTReturnCode(0);
-				}
+				actCemuRequest->setACTReturnCode(0);
 			}
 			else if (actCemuRequest->requestCode == IOSU_ARC_ENABLE_PASSWORD_CACHE)
 			{

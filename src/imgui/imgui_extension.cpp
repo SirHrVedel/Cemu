@@ -193,5 +193,8 @@ void ImGui_UpdateWindowInformation(bool mainWindow)
 
 		if (controller->is_r_down())
 			io.NavInputs[ImGuiNavInput_FocusNext] = 1.0f;
+
+		if (controller->is_lstick_click_down())
+			io.NavInputs[ImGuiNavInput_TweakSlow] = 1.0f;
 	}
 }

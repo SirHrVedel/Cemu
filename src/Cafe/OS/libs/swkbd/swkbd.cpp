@@ -99,6 +99,7 @@ typedef struct
 	bool   activateHeld;  // A button was held last frame
 	bool   shoulderLHeld; // L shoulder was held last frame
 	bool   shoulderRHeld; // R shoulder was held last frame
+	bool   lstickHeld;    // left stick click was held last frame
 
 }swkbdInternalState_t;
 
@@ -232,6 +233,7 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	swkbdInternalState->activateHeld  = false;
 	swkbdInternalState->shoulderLHeld = false;
 	swkbdInternalState->shoulderRHeld = false;
+	swkbdInternalState->lstickHeld    = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
 	swkbdInternalState->cancelButtonWasPressed = false;
@@ -270,7 +272,7 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	swkbdInternalState->cursorPos = swkbdInternalState->formStringLength;
 	// Copy the optional info label (shown above the input field).
 	{
-		const uint16be* infoStr = appearArg->infoText.GetPtr();
+		const uint16be* infoStr = appearArg->hintText.GetPtr();
 		if (infoStr)
 		{
 			sint32 i = 0;
@@ -312,6 +314,7 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	swkbdInternalState->activateHeld  = false;
 	swkbdInternalState->shoulderLHeld = false;
 	swkbdInternalState->shoulderRHeld = false;
+	swkbdInternalState->lstickHeld    = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;
@@ -784,6 +787,7 @@ void swkbd_render(bool mainWindow)
 		const float axisInput     = io.NavInputs[ImGuiNavInput_Input];
 		const float axisShoulderL = io.NavInputs[ImGuiNavInput_FocusPrev];
 		const float axisShoulderR = io.NavInputs[ImGuiNavInput_FocusNext];
+		const float axisLStickClick = io.NavInputs[ImGuiNavInput_TweakSlow];
 		io.NavInputs[ImGuiNavInput_DpadLeft]  = 0.f;
 		io.NavInputs[ImGuiNavInput_DpadRight] = 0.f;
 		io.NavInputs[ImGuiNavInput_DpadUp]    = 0.f;
@@ -793,6 +797,7 @@ void swkbd_render(bool mainWindow)
 		io.NavInputs[ImGuiNavInput_Input]     = 0.f;
 		io.NavInputs[ImGuiNavInput_FocusPrev] = 0.f;
 		io.NavInputs[ImGuiNavInput_FocusNext] = 0.f;
+		io.NavInputs[ImGuiNavInput_TweakSlow] = 0.f;
 
 		// While the fade-in animation is still running, only update the held-state
 		// trackers without firing any actions.  This ensures that a button held to
@@ -809,8 +814,9 @@ void swkbd_render(bool mainWindow)
 			swkbdInternalState->activateHeld    = axisActivate  > 0.5f;
 			swkbdInternalState->cancelState     = axisCancel    > 0.5f;
 			swkbdInternalState->returnState     = axisInput     > 0.5f;
-			swkbdInternalState->shoulderLHeld   = axisShoulderL > 0.5f;
-			swkbdInternalState->shoulderRHeld   = axisShoulderR > 0.5f;
+			swkbdInternalState->shoulderLHeld   = axisShoulderL   > 0.5f;
+			swkbdInternalState->shoulderRHeld   = axisShoulderR   > 0.5f;
+			swkbdInternalState->lstickHeld      = axisLStickClick > 0.5f;
 		}
 		else
 		{
@@ -846,6 +852,12 @@ void swkbd_render(bool mainWindow)
 			swkbdInternalState->keyboardArg.receiverArg.cursorPos = swkbdInternalState->cursorPos;
 		swkbdInternalState->shoulderLHeld = shoulderLNow;
 		swkbdInternalState->shoulderRHeld = shoulderRNow;
+
+		// ── L3 (left stick click): toggle shift ──────────────────────────────
+		const bool lstickNow = axisLStickClick > 0.5f;
+		if (lstickNow && !swkbdInternalState->lstickHeld)
+			swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
+		swkbdInternalState->lstickHeld = lstickNow;
 
 		// ── A: activate the highlighted key ──────────────────────────────────
 		const bool activateNow = axisActivate > 0.5f;

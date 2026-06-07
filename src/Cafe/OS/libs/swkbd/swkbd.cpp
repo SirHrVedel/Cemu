@@ -266,9 +266,8 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 		swkbdInternalState->formStringBuffer[0] = L'\0';
 		swkbdInternalState->formStringLength = 0;
 	}
-	// Place the text cursor: honour the game's cursorIndex, clamped to actual length.
-	swkbdInternalState->cursorPos = std::min((sint32)(uint32)appearArg->cursorIndex,
-	                                          swkbdInternalState->formStringLength);
+	// Always place the cursor at the end of the initial text.
+	swkbdInternalState->cursorPos = swkbdInternalState->formStringLength;
 	// Copy the optional info label (shown above the input field).
 	{
 		const uint16be* infoStr = appearArg->infoText.GetPtr();

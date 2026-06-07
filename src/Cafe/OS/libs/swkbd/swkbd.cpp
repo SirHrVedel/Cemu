@@ -90,11 +90,15 @@ typedef struct
 	bool shiftActivated;
 	bool returnState;
 	bool cancelState;
+	// text input cursor (insertion point within formStringBuffer)
+	sint32 cursorPos;
 	// controller cursor position on the key grid
 	sint32 navRow;
 	sint32 navCol;
-	uint8  navHeldDirs;  // bitmask of d-pad directions held last frame (prevents held-down repeat)
-	bool   activateHeld; // A button was held last frame
+	uint8  navHeldDirs;   // bitmask of d-pad directions held last frame (prevents held-down repeat)
+	bool   activateHeld;  // A button was held last frame
+	bool   shoulderLHeld; // L shoulder was held last frame
+	bool   shoulderRHeld; // R shoulder was held last frame
 
 }swkbdInternalState_t;
 
@@ -180,31 +184,36 @@ void swkbdExport_SwkbdSetReceiver(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
-typedef struct  
+typedef struct
 {
-	/* +0x00 */ uint32 ukn00;
-	/* +0x04 */ uint32 ukn04;
-	/* +0x08 */ uint32 ukn08;
-	/* +0x0C */ uint32 ukn0C;
-	/* +0x10 */ uint32 ukn10;
-	/* +0x14 */ uint32 ukn14;
-	/* +0x18 */ uint32 ukn18;
-	/* +0x1C */ uint32 ukn1C; // pointer to OK string
-	/* +0x20 */ uint32 ukn20[4];
-	/* +0x30 */ uint32 ukn30[4];
-	/* +0x40 */ uint32 ukn40[4];
-	/* +0x50 */ uint32 ukn50[4];
-	/* +0x60 */ uint32 ukn60[4];
-	/* +0x70 */ uint32 ukn70[4];
-	/* +0x80 */ uint32 ukn80[4];
-	/* +0x90 */ uint32 ukn90[4];
-	/* +0xA0 */ uint32 uknA0[4];
-	/* +0xB0 */ uint32 uknB0[4];
-	/* +0xC0 */ uint32 inputFormType;
-	/* +0xC4 */ uint32be cursorIndex;
-	/* +0xC8 */ MEMPTR<uint16be> initialText;
-	/* +0xCC */ MEMPTR<uint16be> infoText;
-	/* +0xD0 */ uint32be maxTextLength;
+	// Confirmed
+	/* +0x00 */ uint32 inputType;        // keyboard layout enum 0-12 (≥13 rejected)
+	/* +0x04 */ uint32 passwordMode;     // 0-4; 4 = swap dim panel to DRC instead of TV
+	/* +0x08 */ uint32 okButtonMode;     // 0=normal 1=enterPress 2=disabled 3=ukn; ≥4 clamped→0
+	/* +0x0C */ uint32 disableKeyGroup;  // bitmask. Disables key groups; different masks applied per display mode
+
+	
+	/* +0x10 */ uint32 ukn10[4];
+
+	// Partially identified
+	/* +0x20 */ uint32 ukn20;
+	/* +0x24 */ uint8  fullWidthMode;    // 0=half-width, 1=full-width input; lbz confirmed
+	/* +0x25 */ uint8  pad25[3];
+	/* +0x28 */ uint32 specialKeyOption; // bitmask enabling special keys: @, %, /, \, digit-row, etc.
+
+	/* +0x2C */ uint32 ukn2C[28];
+	/* +0x9C */ uint32 languageType;     // 0/negative normalised→1 (auto) by firmware
+	/* +0xA0 */ uint32 uknA0[8];
+
+	/* +0xC0 */ uint32    inputFormType;  // 0=keyboard-only (no input box), 1=with input form; ≥2 clamped→1
+	/* +0xC4 */ uint32be  cursorIndex;    // initial cursor position; clamped to textLength
+	/* +0xC8 */ MEMPTR<uint16be> initialText; // NULL = start empty
+	/* +0xCC */ MEMPTR<uint16be> hintText;    // NULL = no hint text shown
+	/* +0xD0 */ uint32be  maxTextLength;  // 0 = default (40 chars)
+	/* +0xD4 */ uint32    insertionModeMask; // stored→instance+0x278; per-char insertable positions bitmask
+	/* +0xD8 */ uint32    preselectMask;     // stored→instance+0x254; preselected chars / cursor reference
+	/* +0xDC */ uint8     ukn_DC;            // inverted (xori 1) before storing→instance+0x25c ("disable X"→"enable X")
+	/* +0xDD */ uint8     pad_DD[3];
 
 }swkbdAppearArg_t;
 
@@ -218,11 +227,17 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	swkbdInternalState->infoTextBuffer[0] = L'\0';
 	swkbdInternalState->navRow      = 0;
 	swkbdInternalState->navCol      = 0;
-	swkbdInternalState->navHeldDirs = 0;
-	swkbdInternalState->activateHeld = false;
+	swkbdInternalState->cursorPos     = 0;
+	swkbdInternalState->navHeldDirs   = 0;
+	swkbdInternalState->activateHeld  = false;
+	swkbdInternalState->shoulderLHeld = false;
+	swkbdInternalState->shoulderRHeld = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
 	swkbdInternalState->cancelButtonWasPressed = false;
+	// AppearInputForm always shows the input field — inputFormType selects the style
+	// (0=single-line, 1=multi-line, 2=separated), not whether the form is visible.
+	// keyboardOnlyMode is only set by AppearKeyboard.
 	swkbdInternalState->keyboardOnlyMode = false;
 
 	// setup max text length
@@ -251,6 +266,9 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 		swkbdInternalState->formStringBuffer[0] = L'\0';
 		swkbdInternalState->formStringLength = 0;
 	}
+	// Place the text cursor: honour the game's cursorIndex, clamped to actual length.
+	swkbdInternalState->cursorPos = std::min((sint32)(uint32)appearArg->cursorIndex,
+	                                          swkbdInternalState->formStringLength);
 	// Copy the optional info label (shown above the input field).
 	{
 		const uint16be* infoStr = appearArg->infoText.GetPtr();
@@ -290,8 +308,11 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	swkbdInternalState->infoTextBuffer[0] = L'\0';
 	swkbdInternalState->navRow      = 0;
 	swkbdInternalState->navCol      = 0;
-	swkbdInternalState->navHeldDirs = 0;
-	swkbdInternalState->activateHeld = false;
+	swkbdInternalState->cursorPos     = 0;
+	swkbdInternalState->navHeldDirs   = 0;
+	swkbdInternalState->activateHeld  = false;
+	swkbdInternalState->shoulderLHeld = false;
+	swkbdInternalState->shoulderRHeld = false;
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;
@@ -511,15 +532,18 @@ void swkbd_render(bool mainWindow)
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, eased);
 
-	// Background dim — canvas only, never bleeds into letterbox borders.
-	ImGui::SetNextWindowPos(canvasMin, ImGuiCond_Always);
-	ImGui::SetNextWindowSize({ cW, cH }, ImGuiCond_Always);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0,0 });
-	ImGui::SetNextWindowBgAlpha(0.8f * eased);
-	ImGui::Begin("Background overlay", nullptr, kPopupFlags | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
-	ImGui::End();
-	ImGui::PopStyleVar(2);
+	// Background dim — only shown in input-form mode; keyboard-only mode draws over the game directly.
+	if (!swkbdInternalState->keyboardOnlyMode)
+	{
+		ImGui::SetNextWindowPos(canvasMin, ImGuiCond_Always);
+		ImGui::SetNextWindowSize({ cW, cH }, ImGuiCond_Always);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0,0 });
+		ImGui::SetNextWindowBgAlpha(0.8f * eased);
+		ImGui::Begin("Background overlay", nullptr, kPopupFlags | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
+		ImGui::End();
+		ImGui::PopStyleVar(2);
+	}
 
 	// The info label and input box are treated as one visual group whose combined
 	// height is centred on the middle of the upper half of the canvas.
@@ -587,38 +611,48 @@ void swkbd_render(bool mainWindow)
 		ImGui::PopFont();
 	}
 
-	// Input box — 80 % canvas width, centre pivot on anchorY.
-	ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
-	ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, anchorY },
-	                        ImGuiCond_Always, { 0.5f, 0.5f });
-	ImGui::SetNextWindowBgAlpha(0.9f * eased);
-	ImGui::PushFont(baseFont);
-	if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
+	// Input box — only shown in input-form mode (inputFormType != 0).
+	// In keyboard-only mode the game receives key events via IEventReceiver callbacks
+	// instead of polling GetInputFormString, matching real HW behaviour.
+	if (!swkbdInternalState->keyboardOnlyMode)
 	{
-		ImGui::SetWindowFontScale(inputScale);
-		ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
-		ImGui::SameLine(0, 8);
-		auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
-
-		static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
-		static bool s_blink_state = false;
-		const auto now = tick_cached();
-
-		if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 500)
+		ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
+		ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, anchorY },
+		                        ImGuiCond_Always, { 0.5f, 0.5f });
+		ImGui::SetNextWindowBgAlpha(0.9f * eased);
+		ImGui::PushFont(baseFont);
+		if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
 		{
-			s_blink_state = !s_blink_state;
-			s_last_tick = now;
+			ImGui::SetWindowFontScale(inputScale);
+			ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
+			ImGui::SameLine(0, 8);
+			auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
+
+			static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
+			static bool s_blink_state = false;
+			const auto now = tick_cached();
+
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 500)
+			{
+				s_blink_state = !s_blink_state;
+				s_last_tick = now;
+			}
+
+			if (s_blink_state)
+			{
+				// All keyboard characters are ASCII so cursorPos == byte offset in the UTF-8 string.
+				const size_t bytePos = static_cast<size_t>(
+					std::clamp(swkbdInternalState->cursorPos, 0, swkbdInternalState->formStringLength));
+				text.insert(bytePos, "|");
+			}
+
+			ImGui::PushTextWrapPos();
+			ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
+			ImGui::PopTextWrapPos();
 		}
-
-		if (s_blink_state)
-			text += "|";
-
-		ImGui::PushTextWrapPos();
-		ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
-		ImGui::PopTextWrapPos();
+		ImGui::End();
+		ImGui::PopFont();
 	}
-	ImGui::End();
-	ImGui::PopFont();
 
 	// Keyboard — bottom-centre pivot at canvas bottom; slides in/out via slideOffset.
 	ImGui::SetNextWindowSizeConstraints({ cW, 0.0f }, { cW, FLT_MAX });
@@ -742,13 +776,15 @@ void swkbd_render(bool mainWindow)
 		// io.NavInputs values are only ever SET by the input layer (never cleared),
 		// so without this they persist at 1.0f after a button is released, causing
 		// all edge-detection to get permanently stuck after the first press.
-		const float axisLeft     = io.NavInputs[ImGuiNavInput_DpadLeft];
-		const float axisRight    = io.NavInputs[ImGuiNavInput_DpadRight];
-		const float axisUp       = io.NavInputs[ImGuiNavInput_DpadUp];
-		const float axisDown     = io.NavInputs[ImGuiNavInput_DpadDown];
-		const float axisActivate = io.NavInputs[ImGuiNavInput_Activate];
-		const float axisCancel   = io.NavInputs[ImGuiNavInput_Cancel];
-		const float axisInput    = io.NavInputs[ImGuiNavInput_Input];
+		const float axisLeft      = io.NavInputs[ImGuiNavInput_DpadLeft];
+		const float axisRight     = io.NavInputs[ImGuiNavInput_DpadRight];
+		const float axisUp        = io.NavInputs[ImGuiNavInput_DpadUp];
+		const float axisDown      = io.NavInputs[ImGuiNavInput_DpadDown];
+		const float axisActivate  = io.NavInputs[ImGuiNavInput_Activate];
+		const float axisCancel    = io.NavInputs[ImGuiNavInput_Cancel];
+		const float axisInput     = io.NavInputs[ImGuiNavInput_Input];
+		const float axisShoulderL = io.NavInputs[ImGuiNavInput_FocusPrev];
+		const float axisShoulderR = io.NavInputs[ImGuiNavInput_FocusNext];
 		io.NavInputs[ImGuiNavInput_DpadLeft]  = 0.f;
 		io.NavInputs[ImGuiNavInput_DpadRight] = 0.f;
 		io.NavInputs[ImGuiNavInput_DpadUp]    = 0.f;
@@ -756,6 +792,8 @@ void swkbd_render(bool mainWindow)
 		io.NavInputs[ImGuiNavInput_Activate]  = 0.f;
 		io.NavInputs[ImGuiNavInput_Cancel]    = 0.f;
 		io.NavInputs[ImGuiNavInput_Input]     = 0.f;
+		io.NavInputs[ImGuiNavInput_FocusPrev] = 0.f;
+		io.NavInputs[ImGuiNavInput_FocusNext] = 0.f;
 
 		// While the fade-in animation is still running, only update the held-state
 		// trackers without firing any actions.  This ensures that a button held to
@@ -769,9 +807,11 @@ void swkbd_render(bool mainWindow)
 			if (axisUp    > 0.5f) currDirs |= 4;
 			if (axisDown  > 0.5f) currDirs |= 8;
 			swkbdInternalState->navHeldDirs  = currDirs;
-			swkbdInternalState->activateHeld = axisActivate > 0.5f;
-			swkbdInternalState->cancelState  = axisCancel   > 0.5f;
-			swkbdInternalState->returnState  = axisInput    > 0.5f;
+			swkbdInternalState->activateHeld    = axisActivate  > 0.5f;
+			swkbdInternalState->cancelState     = axisCancel    > 0.5f;
+			swkbdInternalState->returnState     = axisInput     > 0.5f;
+			swkbdInternalState->shoulderLHeld   = axisShoulderL > 0.5f;
+			swkbdInternalState->shoulderRHeld   = axisShoulderR > 0.5f;
 		}
 		else
 		{
@@ -795,6 +835,18 @@ void swkbd_render(bool mainWindow)
 		if (pressed & 4) { if (row > 0)          { --row; col = std::min(col, kRowSizes[row] - 1); } }
 		if (pressed & 8) { if (row < kNumRows-1) { ++row; col = std::min(col, kRowSizes[row] - 1); } }
 		swkbdInternalState->navHeldDirs = currDirs;
+
+		// ── L/R shoulder: move the text input cursor left / right ────────────
+		const bool shoulderLNow = axisShoulderL > 0.5f;
+		const bool shoulderRNow = axisShoulderR > 0.5f;
+		if (shoulderLNow && !swkbdInternalState->shoulderLHeld)
+			swkbdInternalState->cursorPos = std::max(0, swkbdInternalState->cursorPos - 1);
+		if (shoulderRNow && !swkbdInternalState->shoulderRHeld)
+			swkbdInternalState->cursorPos = std::min(swkbdInternalState->formStringLength, swkbdInternalState->cursorPos + 1);
+		if ((shoulderLNow && !swkbdInternalState->shoulderLHeld) || (shoulderRNow && !swkbdInternalState->shoulderRHeld))
+			swkbdInternalState->keyboardArg.receiverArg.cursorPos = swkbdInternalState->cursorPos;
+		swkbdInternalState->shoulderLHeld = shoulderLNow;
+		swkbdInternalState->shoulderRHeld = shoulderRNow;
 
 		// ── A: activate the highlighted key ──────────────────────────────────
 		const bool activateNow = axisActivate > 0.5f;
@@ -860,7 +912,9 @@ bool swkbd_hasKeyboardInputHook()
 
 void swkbd_finishInput()
 {
-	swkbdInternalState->decideButtonWasPressed = true; // currently we always accept the input
+	if (swkbdInternalState->formStringLength == 0)
+		return; // native swkbd does not confirm empty input; keep keyboard open
+	swkbdInternalState->decideButtonWasPressed = true;
 }
 
 typedef struct  
@@ -871,37 +925,37 @@ typedef struct
 
 SysAllocator<changeStringParam_t> _changeStringParam;
 
-void swkbd_inputStringChanged()
+// Notify the title that the string buffer has changed.
+// beginIndex/endIndex describe the dirty range in the *old* string:
+//   - For a character append at position N:  beginIndex = endIndex = N  (pure insertion, nothing removed)
+//   - For a backspace that removed position N: beginIndex = N, endIndex = N+1
+// The title reads the new string from stringBuf and applies [beginIndex,endIndex) → [beginIndex,newLength).
+void swkbd_inputStringChanged(sint32 beginIndex, sint32 endIndex)
 {
-	if( true )//swkbdInternalState->keyboardOnlyMode )
+	// Write the current string and cursor position to the application's receiver buffers.
+	uint32 stringBufferSize = swkbdInternalState->keyboardArg.receiverArg.stringBufSize; // in 2-byte words
+	if (stringBufferSize > 1)
 	{
-		// write changed string to application's string buffer
-		uint32 stringBufferSize = swkbdInternalState->keyboardArg.receiverArg.stringBufSize; // in 2-byte words
-		if( stringBufferSize > 1 )
+		stringBufferSize--; // exclude null terminator slot
+		const auto stringBufferBE = swkbdInternalState->keyboardArg.receiverArg.stringBuf.GetPtr();
+		sint32 copyLength = std::min((sint32)stringBufferSize, swkbdInternalState->formStringLength);
+		for (sint32 i = 0; i < copyLength; i++)
+			stringBufferBE[i] = swkbdInternalState->formStringBuffer[i];
+		stringBufferBE[copyLength] = '\0';
+	}
+	swkbdInternalState->keyboardArg.receiverArg.cursorPos = swkbdInternalState->cursorPos;
+	// Fire the IEventReceiver::changeString callback with the exact dirty range so the
+	// title can apply a minimal update rather than re-inserting the whole string.
+	if (swkbdInternalState->keyboardArg.receiverArg.IEventReceiver)
+	{
+		SwkbdIEventReceiver_t* eventReceiver = swkbdInternalState->keyboardArg.receiverArg.IEventReceiver.GetPtr();
+		MPTR cbChangeString = eventReceiver->vTable->changeString.GetMPTR();
+		if (cbChangeString)
 		{
-			stringBufferSize--; // don't count the null-termination character
-			const auto stringBufferBE = swkbdInternalState->keyboardArg.receiverArg.stringBuf.GetPtr();
-			sint32 copyLength = std::min((sint32)stringBufferSize, swkbdInternalState->formStringLength);
-			for(sint32 i=0; i<copyLength; i++)
-			{
-				stringBufferBE[i] = swkbdInternalState->formStringBuffer[i];
-			}
-			stringBufferBE[copyLength] = '\0';
-
-			//swkbdInternalState->keyboardArg.cursorPos = copyLength;
-		}
-		// IEventReceiver callback
-		if (swkbdInternalState->keyboardArg.receiverArg.IEventReceiver)
-		{
-			SwkbdIEventReceiver_t* eventReceiver = swkbdInternalState->keyboardArg.receiverArg.IEventReceiver.GetPtr();
-			MPTR cbChangeString = eventReceiver->vTable->changeString.GetMPTR();
-			if (cbChangeString)
-			{
-				changeStringParam_t* changeStringParam = _changeStringParam.GetPtr();
-				changeStringParam->beginIndex = 0;
-				changeStringParam->endIndex = 0;
-				coreinitAsyncCallback_add(cbChangeString, 2, memory_getVirtualOffsetFromPointer(eventReceiver), _changeStringParam.GetMPTR());
-			}
+			changeStringParam_t* changeStringParam = _changeStringParam.GetPtr();
+			changeStringParam->beginIndex = (uint32)beginIndex;
+			changeStringParam->endIndex   = (uint32)endIndex;
+			coreinitAsyncCallback_add(cbChangeString, 2, memory_getVirtualOffsetFromPointer(eventReceiver), _changeStringParam.GetMPTR());
 		}
 	}
 }
@@ -910,10 +964,19 @@ void swkbd_keyInput(uint32 keyCode)
 {
 	if (keyCode == 8 || keyCode == 127) // backspace || backwards delete
 	{
-		if (swkbdInternalState->formStringLength > 0)
+		if (swkbdInternalState->cursorPos > 0)
+		{
+			const sint32 delPos   = swkbdInternalState->cursorPos - 1;
+			const sint32 oldLength = swkbdInternalState->formStringLength;
+			// Shift everything after the deleted character one position left.
+			for (sint32 i = delPos; i < oldLength - 1; i++)
+				swkbdInternalState->formStringBuffer[i] = swkbdInternalState->formStringBuffer[i + 1];
 			swkbdInternalState->formStringLength--;
-		swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = '\0';
-		swkbd_inputStringChanged();
+			swkbdInternalState->cursorPos--;
+			swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = L'\0';
+			// Dirty range: character at [delPos, delPos+1) was removed.
+			swkbd_inputStringChanged(delPos, delPos + 1);
+		}
 		return;
 	}
 	else if (keyCode == 13) // return
@@ -954,13 +1017,19 @@ void swkbd_keyInput(uint32 keyCode)
 		else
 			maxLength = 0;
 	}
-	// append character
+	// insert character at cursorPos
 	if (swkbdInternalState->formStringLength < maxLength)
 	{
-		swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = keyCode;
+		const sint32 insertPos = swkbdInternalState->cursorPos;
+		// Shift everything from insertPos onward one position right to make room.
+		for (sint32 i = swkbdInternalState->formStringLength; i > insertPos; i--)
+			swkbdInternalState->formStringBuffer[i] = swkbdInternalState->formStringBuffer[i - 1];
+		swkbdInternalState->formStringBuffer[insertPos] = keyCode;
 		swkbdInternalState->formStringLength++;
-		swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = '\0';
-		swkbd_inputStringChanged();
+		swkbdInternalState->cursorPos++;
+		swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = L'\0';
+		// Dirty range: pure insertion at insertPos — nothing was removed from the old string.
+		swkbd_inputStringChanged(insertPos, insertPos);
 	}
 }
 

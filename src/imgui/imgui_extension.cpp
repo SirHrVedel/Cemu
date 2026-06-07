@@ -187,5 +187,11 @@ void ImGui_UpdateWindowInformation(bool mainWindow)
 		
 		if (controller->is_down_down())
 			io.NavInputs[ImGuiNavInput_DpadDown] = 1.0f;
+
+		if (controller->is_l_down())
+			io.NavInputs[ImGuiNavInput_FocusPrev] = 1.0f;
+
+		if (controller->is_r_down())
+			io.NavInputs[ImGuiNavInput_FocusNext] = 1.0f;
 	}
 }

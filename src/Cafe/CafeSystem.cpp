@@ -448,6 +448,8 @@ namespace CafeSystem
 	TitleId sForegroundTitleId = 0;
 
 	GameInfo2 sGameInfo_ForegroundTitle;
+	// update titles overlaid on their base's MLC path (for transparent meta access)
+	std::vector<std::pair<TitleInfo*, std::string>> m_mlcPatchMounts;
 
 
 	static void _CheckForWine()
@@ -920,11 +922,14 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return "Unknown Game";
+		// prefer update meta if available, matching real Wii U behaviour
+		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		ParsedMetaXml* meta = (update.IsValid() && update.GetMetaInfo()) ? update.GetMetaInfo() : sGameInfo_ForegroundTitle.GetBase().GetMetaInfo();
 		std::string applicationName;
-		applicationName = sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetShortName(GetConfig().console_language);
-		if (applicationName.empty()) //Try to get the English Title
-			applicationName = sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetShortName(CafeConsoleLanguage::EN);
-		if (applicationName.empty()) //Unknown Game
+		applicationName = meta->GetShortName(GetConfig().console_language);
+		if (applicationName.empty())
+			applicationName = meta->GetShortName(CafeConsoleLanguage::EN);
+		if (applicationName.empty())
 			applicationName = "Unknown Game";
 		return applicationName;
 	}
@@ -933,7 +938,9 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return -1;
-		return sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetOlvAccesskey();
+		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		ParsedMetaXml* meta = (update.IsValid() && update.GetMetaInfo()) ? update.GetMetaInfo() : sGameInfo_ForegroundTitle.GetBase().GetMetaInfo();
+		return meta->GetOlvAccesskey();
 	}
 
 	std::string GetForegroundTitleArgStr()
@@ -1048,7 +1055,18 @@ namespace CafeSystem
 		if (sGameInfo_ForegroundTitle.GetBase().IsValid())
 			MlcStorageMountTitle(sGameInfo_ForegroundTitle.GetBase());
 		if (sGameInfo_ForegroundTitle.GetUpdate().IsValid())
+		{
 			MlcStorageMountTitle(sGameInfo_ForegroundTitle.GetUpdate());
+			// overlay update files on top of the base's MLC path with patch priority so that
+			// any VFS reader (HOME menu, ACP, shader cache) transparently gets update meta
+			// for files not present in the update the base files are used as fallback
+			std::string baseMlcPath = GetMlcStoragePath(sGameInfo_ForegroundTitle.GetBase().GetAppTitleId());
+			TitleInfo* patchMount = new TitleInfo(sGameInfo_ForegroundTitle.GetUpdate());
+			if (patchMount->Mount(baseMlcPath, "", FSC_PRIORITY_PATCH))
+				m_mlcPatchMounts.emplace_back(patchMount, baseMlcPath);
+			else
+				delete patchMount;
+		}
 		for(auto& it : sGameInfo_ForegroundTitle.GetAOC())
 			MlcStorageMountTitle(it);
 
@@ -1096,6 +1114,25 @@ namespace CafeSystem
 		if (!CafeTitleList::GetFirstByTitleId(titleId, titleInfo))
 			return;
 		MlcStorageMountTitle(titleInfo);
+		// for base application titles: overlay the update (if any) on the base path so
+		// any VFS reader transparently gets update meta with fallback to base
+		if ((uint32)(titleId >> 32) != 0x00050000)
+			return;
+		TitleId updateTitleId = (titleId & 0x00000000FFFFFFFFULL) | (0x0005000EULL << 32);
+		TitleInfo updateInfo;
+		if (!CafeTitleList::GetFirstByTitleId(updateTitleId, updateInfo))
+			return;
+		std::string baseMlcPath = GetMlcStoragePath(titleId);
+		bool alreadyPatched = std::any_of(m_mlcPatchMounts.begin(), m_mlcPatchMounts.end(),
+			[&baseMlcPath](const auto& p) { return p.second == baseMlcPath; });
+		if (alreadyPatched)
+			return;
+		MlcStorageMountTitle(updateInfo); // ensure update is mounted at its own path too
+		TitleInfo* patchMount = new TitleInfo(updateInfo);
+		if (patchMount->Mount(baseMlcPath, "", FSC_PRIORITY_PATCH))
+			m_mlcPatchMounts.emplace_back(patchMount, baseMlcPath);
+		else
+			delete patchMount;
 	}
 
 	void MlcStorageMountAllTitles()
@@ -1107,6 +1144,12 @@ namespace CafeSystem
 
     void MlcStorageUnmountAllTitles()
     {
+        for (auto& [titleInfo, path] : m_mlcPatchMounts)
+        {
+            titleInfo->Unmount(path);
+            delete titleInfo;
+        }
+        m_mlcPatchMounts.clear();
         for(auto& it : m_mlcMountedTitles)
         {
             std::string mlcStoragePath = GetMlcStoragePath(it.first);

@@ -375,12 +375,15 @@ std::string wxGameList::GetNameByTitleId(uint64 titleId)
 	auto it = m_name_cache.find(titleId);
 	if (it != m_name_cache.end())
 		return it->second;
-	TitleInfo titleInfo;
-	if (!CafeTitleList::GetFirstByTitleId(titleId, titleInfo))
-		return "Unknown title";
 	std::string name;
 	if (!GetConfig().GetGameListCustomName(titleId, name))
-		name = titleInfo.GetMetaTitleName();
+	{
+		GameInfo2 gameInfo = CafeTitleList::GetGameInfo(titleId);
+		if (gameInfo.IsValid())
+			name = gameInfo.GetTitleName();
+		else
+			name = "Unknown title";
+	}
 	m_name_cache.emplace(titleId, name);
 	return name;
 }
@@ -1330,23 +1333,38 @@ void wxGameList::AsyncWorkerThread()
 		if(m_icon_loaded.find(titleId) != m_icon_loaded.end())
 			continue;
 		m_icon_loaded.emplace(titleId);
-		// load and process icon
-		TitleInfo titleInfo;
-		if( !CafeTitleList::GetFirstByTitleId(titleId, titleInfo) )
+		// load and process icon — prefer update's icon over base (matches real Wii U behaviour)
+		GameInfo2 gameInfo = CafeTitleList::GetGameInfo(titleId);
+		if (!gameInfo.IsValid())
 			continue;
-		std::string tempMountPath = TitleInfo::GetUniqueTempMountingPath();
-		if(!titleInfo.Mount(tempMountPath, "", FSC_PRIORITY_BASE))
-			continue;
-		auto tgaData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga").c_str());
-		// try iconTex.tga.gz
-		if (!tgaData)
+		// build a list of candidates: update first, then base
+		TitleInfo* candidates[2] = { gameInfo.HasUpdate() ? &gameInfo.GetUpdate() : nullptr, &gameInfo.GetBase() };
+		std::optional<std::vector<uint8>> tgaData;
+		std::string tempMountPath;
+		TitleInfo* mountedTitle = nullptr;
+		for (TitleInfo* candidate : candidates)
 		{
-			tgaData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga.gz").c_str());
-			if (tgaData)
+			if (!candidate)
+				continue;
+			tempMountPath = TitleInfo::GetUniqueTempMountingPath();
+			if (!candidate->Mount(tempMountPath, "", FSC_PRIORITY_BASE))
+				continue;
+			tgaData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga").c_str());
+			if (!tgaData)
 			{
-				auto decompressed = zlibDecompress(*tgaData, 70*1024);
-				std::swap(tgaData, decompressed);
+				tgaData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga.gz").c_str());
+				if (tgaData)
+				{
+					auto decompressed = zlibDecompress(*tgaData, 70*1024);
+					std::swap(tgaData, decompressed);
+				}
 			}
+			if (tgaData && tgaData->size() > 16)
+			{
+				mountedTitle = candidate;
+				break;
+			}
+			candidate->Unmount(tempMountPath);
 		}
 		bool iconSuccessfullyLoaded = false;
 		if (tgaData && tgaData->size() > 16)
@@ -1366,7 +1384,8 @@ void wxGameList::AsyncWorkerThread()
 		{
 			cemuLog_log(LogType::Force, "Failed to load icon for title {:016x}", titleId);
 		}
-		titleInfo.Unmount(tempMountPath);
+		if (mountedTitle)
+			mountedTitle->Unmount(tempMountPath);
 		// notify UI about loaded icon
 		if(iconSuccessfullyLoaded)
 			wxQueueEvent(this, new wxTitleIdEvent(wxEVT_GAME_ENTRY_ADDED_OR_REMOVED, titleId));

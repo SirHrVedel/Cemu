@@ -82,7 +82,13 @@ public:
 	std::string GetTitleName()
 	{
 		cemu_assert_debug(m_base.IsValid());
-		return m_base.GetMetaTitleName(); // long name
+		if (m_update.IsValid())
+		{
+			std::string updateName = m_update.GetMetaTitleName();
+			if (!updateName.empty())
+				return updateName;
+		}
+		return m_base.GetMetaTitleName();
 	}
 
 	uint16 GetVersion() const

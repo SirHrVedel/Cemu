@@ -86,6 +86,13 @@ typedef struct
 	bool cancelButtonWasPressed; // set when back button is pressed; checked by SwkbdIsDecideCancelButton
 	// info label supplied by the game via AppearArg::infoText (shown above the text field)
 	wchar_t infoTextBuffer[256];
+	// keyboard layout mode (set from appearArg when keyboard appears)
+	uint32 inputType;
+	uint32 okButtonMode;      // 0=normal OK (allows empty), 1=enterPress (requires input), 2=disabled
+	uint32 fullWidthMode;     // 0=half-width (ASCII), 1=full-width (wide/Japanese)
+	uint32 disableKeyGroup;   // bitmask of disabled key groups; bit 15 = alphabetic group
+	uint32 inputFormType;     // 0=single-line input, 1=multi-line (large) input
+	sint32 minTextLength;     // okMode=0: OK disabled until this many chars entered (≥1 by default)
 	// imgui keyboard drawing stuff
 	bool shiftActivated;
 	bool returnState;
@@ -104,6 +111,13 @@ typedef struct
 }swkbdInternalState_t;
 
 swkbdInternalState_t* swkbdInternalState = NULL;
+
+// Per-element base font sizes in pixels at the 720p baseline.
+// Each value is scaled automatically to the actual canvas height
+// exactly like the global 52px baseline is today.
+static float swkbd_fontSizeKeys  = 52.0f;  // key button labels
+static float swkbd_fontSizeHint  = 36.0f;  // hint / info label above the input field
+static float swkbd_fontSizeInput = 52.0f;  // text inside the input field
 
 void swkbdExport_SwkbdCreate(PPCInterpreter_t* hCPU)
 {
@@ -188,31 +202,31 @@ void swkbdExport_SwkbdSetReceiver(PPCInterpreter_t* hCPU)
 typedef struct
 {
 	// Confirmed
-	/* +0x00 */ uint32 inputType;        // keyboard layout enum 0-12 (≥13 rejected)
-	/* +0x04 */ uint32 passwordMode;     // 0-4; 4 = swap dim panel to DRC instead of TV
-	/* +0x08 */ uint32 okButtonMode;     // 0=normal 1=enterPress 2=disabled 3=ukn; ≥4 clamped→0
-	/* +0x0C */ uint32 disableKeyGroup;  // bitmask. Disables key groups; different masks applied per display mode
+	/* +0x00 */ uint32be inputType;        // keyboard layout enum 0-12 (≥13 rejected)
+	/* +0x04 */ uint32be passwordMode;     // 0-4; 4 = swap dim panel to DRC instead of TV
+	/* +0x08 */ uint32be okButtonMode;     // 0=normal 1=enterPress 2=disabled 3=ukn; ≥4 clamped→0
+	/* +0x0C */ uint32be disableKeyGroup;  // bitmask. Disables key groups; different masks applied per display mode
 
 	
-	/* +0x10 */ uint32 ukn10[4];
+	/* +0x10 */ uint32be ukn10[4];
 
 	// Partially identified
-	/* +0x20 */ uint32 ukn20;
-	/* +0x24 */ uint8  fullWidthMode;    // 0=half-width, 1=full-width input; lbz confirmed
-	/* +0x25 */ uint8  pad25[3];
-	/* +0x28 */ uint32 specialKeyOption; // bitmask enabling special keys: @, %, /, \, digit-row, etc.
+	/* +0x20 */ uint32be ukn20;
+	/* +0x24 */ uint8    fullWidthMode;    // 0=half-width/numeric (numpad), 1=full-width (QWERTY); lbz confirmed
+	/* +0x25 */ uint8    pad25[3];
+	/* +0x28 */ uint32be specialKeyOption; // bitmask enabling special keys: @, %, /, \, digit-row, etc.
 
-	/* +0x2C */ uint32 ukn2C[28];
-	/* +0x9C */ uint32 languageType;     // 0/negative normalised→1 (auto) by firmware
-	/* +0xA0 */ uint32 uknA0[8];
+	/* +0x2C */ uint32be ukn2C[28];
+	/* +0x9C */ uint32be languageType;     // 0/negative normalised→1 (auto) by firmware
+	/* +0xA0 */ uint32be uknA0[8];
 
-	/* +0xC0 */ uint32    inputFormType;  // 0=keyboard-only (no input box), 1=with input form; ≥2 clamped→1
+	/* +0xC0 */ uint32be  inputFormType;  // 0=keyboard-only (no input box), 1=with input form; ≥2 clamped→1
 	/* +0xC4 */ uint32be  cursorIndex;    // initial cursor position; clamped to textLength
 	/* +0xC8 */ MEMPTR<uint16be> initialText; // NULL = start empty
 	/* +0xCC */ MEMPTR<uint16be> hintText;    // NULL = no hint text shown
 	/* +0xD0 */ uint32be  maxTextLength;  // 0 = default (40 chars)
-	/* +0xD4 */ uint32    insertionModeMask; // stored→instance+0x278; per-char insertable positions bitmask
-	/* +0xD8 */ uint32    preselectMask;     // stored→instance+0x254; preselected chars / cursor reference
+	/* +0xD4 */ uint32be  insertionModeMask; // stored→instance+0x278; per-char insertable positions bitmask
+	/* +0xD8 */ uint32be  preselectMask;     // stored→instance+0x254; preselected chars / cursor reference
 	/* +0xDC */ uint8     ukn_DC;            // inverted (xori 1) before storing→instance+0x25c ("disable X"→"enable X")
 	/* +0xDD */ uint8     pad_DD[3];
 
@@ -237,6 +251,57 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 {
 	ppcDefineParamStructPtr(appearArg, swkbdAppearArg_t, 0);
 	cemuLog_logDebug(LogType::Force, "SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg");
+	cemuLog_log(LogType::Force,
+	    "SWKBD AppearInputForm: inputType={} passwordMode={} okButtonMode={} "
+	    "disableKeyGroup={:#010x} fullWidthMode={} specialKeyOption={:#010x} "
+	    "languageType={} maxTextLength={} insertionModeMask={:#010x} "
+	    "preselectMask={:#010x} inputFormType={} ukn_DC={}",
+	    (uint32)appearArg->inputType, (uint32)appearArg->passwordMode,
+	    (uint32)appearArg->okButtonMode, (uint32)appearArg->disableKeyGroup,
+	    (uint32)appearArg->fullWidthMode, (uint32)appearArg->specialKeyOption,
+	    (uint32)appearArg->languageType, (uint32)appearArg->maxTextLength,
+	    (uint32)appearArg->insertionModeMask, (uint32)appearArg->preselectMask,
+	    (uint32)appearArg->inputFormType, (uint32)appearArg->ukn_DC);
+	// Dump unknown fields to identify minTextLength and other unresolved parameters.
+	cemuLog_log(LogType::Force,
+	    "SWKBD ukn10[]: {:08x} {:08x} {:08x} {:08x}  ukn20={:08x}",
+	    (uint32)appearArg->ukn10[0], (uint32)appearArg->ukn10[1],
+	    (uint32)appearArg->ukn10[2], (uint32)appearArg->ukn10[3],
+	    (uint32)appearArg->ukn20);
+	cemuLog_log(LogType::Force,
+	    "SWKBD ukn2C[00-07]: {:08x} {:08x} {:08x} {:08x}  {:08x} {:08x} {:08x} {:08x}",
+	    (uint32)appearArg->ukn2C[0],  (uint32)appearArg->ukn2C[1],
+	    (uint32)appearArg->ukn2C[2],  (uint32)appearArg->ukn2C[3],
+	    (uint32)appearArg->ukn2C[4],  (uint32)appearArg->ukn2C[5],
+	    (uint32)appearArg->ukn2C[6],  (uint32)appearArg->ukn2C[7]);
+	cemuLog_log(LogType::Force,
+	    "SWKBD ukn2C[08-15]: {:08x} {:08x} {:08x} {:08x}  {:08x} {:08x} {:08x} {:08x}",
+	    (uint32)appearArg->ukn2C[8],  (uint32)appearArg->ukn2C[9],
+	    (uint32)appearArg->ukn2C[10], (uint32)appearArg->ukn2C[11],
+	    (uint32)appearArg->ukn2C[12], (uint32)appearArg->ukn2C[13],
+	    (uint32)appearArg->ukn2C[14], (uint32)appearArg->ukn2C[15]);
+	cemuLog_log(LogType::Force,
+	    "SWKBD ukn2C[16-27]: {:08x} {:08x} {:08x} {:08x}  {:08x} {:08x} {:08x} {:08x}  {:08x} {:08x} {:08x} {:08x}",
+	    (uint32)appearArg->ukn2C[16], (uint32)appearArg->ukn2C[17],
+	    (uint32)appearArg->ukn2C[18], (uint32)appearArg->ukn2C[19],
+	    (uint32)appearArg->ukn2C[20], (uint32)appearArg->ukn2C[21],
+	    (uint32)appearArg->ukn2C[22], (uint32)appearArg->ukn2C[23],
+	    (uint32)appearArg->ukn2C[24], (uint32)appearArg->ukn2C[25],
+	    (uint32)appearArg->ukn2C[26], (uint32)appearArg->ukn2C[27]);
+	cemuLog_log(LogType::Force,
+	    "SWKBD uknA0[]: {:08x} {:08x} {:08x} {:08x}  {:08x} {:08x} {:08x} {:08x}",
+	    (uint32)appearArg->uknA0[0], (uint32)appearArg->uknA0[1],
+	    (uint32)appearArg->uknA0[2], (uint32)appearArg->uknA0[3],
+	    (uint32)appearArg->uknA0[4], (uint32)appearArg->uknA0[5],
+	    (uint32)appearArg->uknA0[6], (uint32)appearArg->uknA0[7]);
+	swkbdInternalState->inputType        = (uint32)appearArg->inputType;
+	swkbdInternalState->okButtonMode     = (uint32)appearArg->okButtonMode;
+	swkbdInternalState->fullWidthMode    = (uint32)appearArg->fullWidthMode;
+	swkbdInternalState->disableKeyGroup  = (uint32)appearArg->disableKeyGroup;
+	swkbdInternalState->inputFormType    = (uint32)appearArg->inputFormType;
+	// TODO: parse minTextLength from appearArg once its struct offset is confirmed via the field dump.
+	// For okMode=0 the real minimum is ≥1; default to 1 until the field is identified.
+	swkbdInternalState->minTextLength    = 1;
 	swkbdInternalState->formStringLength = 0;
 	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
@@ -303,13 +368,66 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	// todo: Figure out what the difference between AppearInputForm and AppearKeyboard is?
 	cemuLog_logDebug(LogType::Force, "SwkbdAppearKeyboard__3RplFRCQ3_2nn5swkbd11KeyboardArg");
 	SwkbdKeyboardArg_t* keyboardArg = (SwkbdKeyboardArg_t*)memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
+	// All SwkbdKeyboardArg_t fields are plain uint32 in PPC (BE) memory — swap before logging.
+	#define SWP(f) _swapEndianU32((f))
+	cemuLog_log(LogType::Force,
+	    "SWKBD AppearKeyboard: ukn000={:08x} controllerType={:08x} keyboardMode={:08x} ukn00C={:08x}",
+	    SWP(keyboardArg->ukn000), SWP(keyboardArg->controllerType),
+	    SWP(keyboardArg->keyboardMode), SWP(keyboardArg->ukn00C));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn010-01C: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn010), SWP(keyboardArg->ukn014),
+	    SWP(keyboardArg->ukn018), SWP(keyboardArg->ukn01C));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn020[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn020[0]), SWP(keyboardArg->ukn020[1]),
+	    SWP(keyboardArg->ukn020[2]), SWP(keyboardArg->ukn020[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn030[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn030[0]), SWP(keyboardArg->ukn030[1]),
+	    SWP(keyboardArg->ukn030[2]), SWP(keyboardArg->ukn030[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn040[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn040[0]), SWP(keyboardArg->ukn040[1]),
+	    SWP(keyboardArg->ukn040[2]), SWP(keyboardArg->ukn040[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn050[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn050[0]), SWP(keyboardArg->ukn050[1]),
+	    SWP(keyboardArg->ukn050[2]), SWP(keyboardArg->ukn050[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn060[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn060[0]), SWP(keyboardArg->ukn060[1]),
+	    SWP(keyboardArg->ukn060[2]), SWP(keyboardArg->ukn060[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn070[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn070[0]), SWP(keyboardArg->ukn070[1]),
+	    SWP(keyboardArg->ukn070[2]), SWP(keyboardArg->ukn070[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn080[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn080[0]), SWP(keyboardArg->ukn080[1]),
+	    SWP(keyboardArg->ukn080[2]), SWP(keyboardArg->ukn080[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn090[]: {:08x} {:08x} {:08x} {:08x}",
+	    SWP(keyboardArg->ukn090[0]), SWP(keyboardArg->ukn090[1]),
+	    SWP(keyboardArg->ukn090[2]), SWP(keyboardArg->ukn090[3]));
+	cemuLog_log(LogType::Force,
+	    "SWKBD KB ukn0A0={:08x} ukn0A4={:08x}  "
+	    "receiverArg: IEventReceiver={:08x} stringBuf={:08x} stringBufSize={} fixedCharLimit={} cursorPos={} selectFrom={}",
+	    SWP(keyboardArg->ukn0A0), SWP(keyboardArg->ukn0A4),
+	    keyboardArg->receiverArg.IEventReceiver.GetMPTR(),
+	    keyboardArg->receiverArg.stringBuf.GetMPTR(),
+	    (sint32)keyboardArg->receiverArg.stringBufSize,
+	    (sint32)keyboardArg->receiverArg.fixedCharLimit,
+	    (sint32)keyboardArg->receiverArg.cursorPos,
+	    (sint32)keyboardArg->receiverArg.selectFrom);
+	#undef SWP
 
-	uint32 argPtr = hCPU->gpr[3];
-	for(sint32 i=0; i<0x180; i += 4)
-	{
-		debug_printf("+0x%03x: 0x%08x\n", i, memory_readU32(argPtr+i));
-	}
-
+	swkbdInternalState->inputType        = 0;
+	swkbdInternalState->okButtonMode     = 0;
+	swkbdInternalState->fullWidthMode    = 1; // AppearKeyboard has no fullWidthMode; default to full-width (QWERTY)
+	swkbdInternalState->disableKeyGroup  = 0; // no key groups disabled by default
+	swkbdInternalState->inputFormType    = 0;
+	swkbdInternalState->minTextLength    = 1; // okMode=0: require at least one character
 	swkbdInternalState->formStringLength = 0;
 	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
@@ -420,6 +538,19 @@ void swkbdExport_SwkbdIsNeedCalcSubThreadPredict(PPCInterpreter_t* hCPU)
 }
 
 void swkbd_keyInput(uint32 keyCode);
+
+// Returns true if the given printable character is accepted in the current keyboard mode.
+// Used both to gate swkbd_keyInput and to grey out buttons in the UI.
+static bool swkbd_isCharAllowed(uint32 keyCode)
+{
+	if (keyCode < 32 || keyCode >= 128)
+		return false;
+	// Half-width + alphabetic group disabled → digits only (numpad mode).
+	if (swkbdInternalState->fullWidthMode == 0 && (swkbdInternalState->disableKeyGroup & (1u << 15)))
+		return keyCode >= '0' && keyCode <= '9';
+	return true;
+}
+
 void swkbd_render(bool mainWindow)
 {
 	// Animation state: separate timers for appear and disappear.
@@ -502,7 +633,10 @@ void swkbd_render(bool mainWindow)
 	const auto baseFont = ImGui_GetFont(kBaseFontSz);
 	if (!baseFont)
 		return; // font queued for loading; renders correctly next frame
-	const float uiScale = (52.0f * scale) / kBaseFontSz;
+	// Per-element scales: base-size-at-720p × resolution-scale ÷ atlas-font-size.
+	const float uiScaleKeys  = (swkbd_fontSizeKeys  * scale) / kBaseFontSz;
+	const float uiScaleHint  = (swkbd_fontSizeHint  * scale) / kBaseFontSz;
+	const float uiScaleInput = (swkbd_fontSizeInput * scale) / kBaseFontSz;
 
 	// ── Layout metrics ────────────────────────────────────────────────────────
 	const auto& style    = ImGui::GetStyle();
@@ -540,8 +674,7 @@ void swkbd_render(bool mainWindow)
 		ImGui::PopStyleVar(2);
 	}
 
-	// The info label and input box are treated as one visual group whose combined
-	// height is centred on the middle of the upper half of the canvas.
+	// Layout metrics for small-field mode (centred in the upper quarter).
 	const float anchorY    = canvasMin.y + cH * 0.25f;
 	const float fieldWidth = cW * 0.8f;
 	// Estimated single-line height of the input box (font + padding).
@@ -550,8 +683,24 @@ void swkbd_render(bool mainWindow)
 	// overlapping the input field below it.
 	const float infoBottomY = anchorY - inputH * 0.5f - 6.0f * scale;
 
-	// Info label — transparent, bottom-pivot, centre-aligned word-wrapped text.
-	if (swkbdInternalState->infoTextBuffer[0] != L'\0')
+	// Large-field mode (inputFormType 1): the input box fills the entire top half and
+	// renders the hint text as an inline grey placeholder instead of a separate label.
+	const bool isLargeField = (!swkbdInternalState->keyboardOnlyMode && swkbdInternalState->inputFormType == 1);
+
+	// Blink cursor — shared by both small and large field paths.
+	static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
+	static bool s_blink_state = false;
+	{
+		const auto now = tick_cached();
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 500)
+		{
+			s_blink_state = !s_blink_state;
+			s_last_tick = now;
+		}
+	}
+
+	// Info label — only shown in small-field mode; large-field uses inline placeholder.
+	if (!isLargeField && swkbdInternalState->infoTextBuffer[0] != L'\0')
 	{
 		const auto infoStr = boost::nowide::narrow(swkbdInternalState->infoTextBuffer);
 		ImGui::SetNextWindowBgAlpha(0.0f);
@@ -561,10 +710,7 @@ void swkbd_render(bool mainWindow)
 		ImGui::PushFont(baseFont);
 		if (ImGui::Begin("Keyboard Info Label", nullptr, kPopupFlags | ImGuiWindowFlags_NoBackground))
 		{
-			ImGui::SetWindowFontScale(uiScale);
-			// SetCursorPosX is relative to the window left edge (not content region),
-			// so use GetWindowWidth() as the container for the centering formula.
-			// Wrap still guards against the content area (minus padding on both sides).
+			ImGui::SetWindowFontScale(uiScaleHint);
 			const float windowW = ImGui::GetWindowWidth();
 			const float wrapW   = windowW - 2.0f * kWinPadX;
 			auto flushLine = [&](const std::string& line)
@@ -603,46 +749,71 @@ void swkbd_render(bool mainWindow)
 		ImGui::PopFont();
 	}
 
-	// Input box — only shown in input-form mode (inputFormType != 0).
-	// In keyboard-only mode the game receives key events via IEventReceiver callbacks
-	// instead of polling GetInputFormString, matching real HW behaviour.
+	// Input box — only shown when there is an input form (not keyboard-only mode).
 	if (!swkbdInternalState->keyboardOnlyMode)
 	{
-		ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
-		ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, anchorY },
-		                        ImGuiCond_Always, { 0.5f, 0.5f });
-		ImGui::SetNextWindowBgAlpha(0.9f * eased);
 		ImGui::PushFont(baseFont);
-		if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
+		if (isLargeField)
 		{
-			ImGui::SetWindowFontScale(uiScale);
-			ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
-			ImGui::SameLine(0, 8);
-			auto text = boost::nowide::narrow(swkbdInternalState->formStringBuffer);
-
-			static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
-			static bool s_blink_state = false;
-			const auto now = tick_cached();
-
-			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 500)
+			// Large field: fill the entire top half of the canvas with no auto-resize.
+			constexpr auto kLargeFieldFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration |
+			                                  ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+			                                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar;
+			ImGui::SetNextWindowPos(canvasMin, ImGuiCond_Always, { 0.0f, 0.0f });
+			ImGui::SetNextWindowSize({ cW, cH * 0.5f }, ImGuiCond_Always);
+			ImGui::SetNextWindowBgAlpha(0.9f * eased);
+			if (ImGui::Begin("Keyboard Input", nullptr, kLargeFieldFlags))
 			{
-				s_blink_state = !s_blink_state;
-				s_last_tick = now;
+				ImGui::SetWindowFontScale(uiScaleInput);
+				ImGui::PushTextWrapPos();
+				if (swkbdInternalState->formStringLength == 0 && swkbdInternalState->infoTextBuffer[0] != L'\0')
+				{
+					// Hint text as grey placeholder — cursor position is unaffected.
+					const auto hintStr = boost::nowide::narrow(swkbdInternalState->infoTextBuffer);
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.55f, 1.0f));
+					ImGui::TextUnformatted(hintStr.c_str());
+					ImGui::PopStyleColor();
+				}
+				else
+				{
+					auto text = boost::nowide::narrow(swkbdInternalState->formStringBuffer);
+					if (s_blink_state)
+					{
+						const size_t bytePos = static_cast<size_t>(
+							std::clamp(swkbdInternalState->cursorPos, 0, swkbdInternalState->formStringLength));
+						text.insert(bytePos, "|");
+					}
+					ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
+				}
+				ImGui::PopTextWrapPos();
 			}
-
-			if (s_blink_state)
-			{
-				// All keyboard characters are ASCII so cursorPos == byte offset in the UTF-8 string.
-				const size_t bytePos = static_cast<size_t>(
-					std::clamp(swkbdInternalState->cursorPos, 0, swkbdInternalState->formStringLength));
-				text.insert(bytePos, "|");
-			}
-
-			ImGui::PushTextWrapPos();
-			ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
-			ImGui::PopTextWrapPos();
+			ImGui::End();
 		}
-		ImGui::End();
+		else
+		{
+			// Small field: centred in the upper quarter of the canvas.
+			ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
+			ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, anchorY },
+			                        ImGuiCond_Always, { 0.5f, 0.5f });
+			ImGui::SetNextWindowBgAlpha(0.9f * eased);
+			if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
+			{
+				ImGui::SetWindowFontScale(uiScaleInput);
+				ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
+				ImGui::SameLine(0, 8);
+				auto text = boost::nowide::narrow(swkbdInternalState->formStringBuffer);
+				if (s_blink_state)
+				{
+					const size_t bytePos = static_cast<size_t>(
+						std::clamp(swkbdInternalState->cursorPos, 0, swkbdInternalState->formStringLength));
+					text.insert(bytePos, "|");
+				}
+				ImGui::PushTextWrapPos();
+				ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
+				ImGui::PopTextWrapPos();
+			}
+			ImGui::End();
+		}
 		ImGui::PopFont();
 	}
 
@@ -655,7 +826,7 @@ void swkbd_render(bool mainWindow)
 
 	if (ImGui::Begin(mainWindow ? "Software keyboard##SoftwareKeyboard1" : "Software keyboard##SoftwareKeyboard0", nullptr, kPopupFlags))
 	{
-		ImGui::SetWindowFontScale(uiScale);
+		ImGui::SetWindowFontScale(uiScaleKeys);
 		static const char* kNormalKeys[] =
 		{
 			"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",
@@ -672,8 +843,51 @@ void swkbd_render(bool mainWindow)
 			"Z", "X", "C", "V", "B", "N", "M", "<", ">", "+", "=", "\n",
 			_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
 		};
-		const char* const* keys = swkbdInternalState->shiftActivated ? kShiftedKeys : kNormalKeys;
-		const size_t keyCount   = swkbdInternalState->shiftActivated ? std::size(kShiftedKeys) : std::size(kNormalKeys);
+		// Numpad layout.
+		// Digit rows (0-3) all centre on a 3-column grid; ⌫ is appended to row 0
+		// without affecting that indent.  "" = visible disabled spacer (no label,
+		// dark background) used to visually balance the "0" row.
+		static const char* kNumpadKeys[] =
+		{
+			"1", "2", "3", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",  // row 0: digits + ⌫ to the right
+			"4", "5", "6",                                              "\n",  // row 1
+			"7", "8", "9",                                              "\n",  // row 2
+			"",  "0", "",                                               "\n",  // row 3: 0 centred with visible spacers
+			_utf8WrapperPtr(ICON_FA_TIMES), " ", _utf8WrapperPtr(ICON_FA_CHECK)
+		};
+
+		// Half-width + alphabetic group disabled → numpad layout.
+		const bool isNumpad = (swkbdInternalState->fullWidthMode == 0 && (swkbdInternalState->disableKeyGroup & (1u << 15)) != 0);
+		const char* const* keys;
+		size_t keyCount;
+		if (isNumpad)
+		{
+			keys     = kNumpadKeys;
+			keyCount = std::size(kNumpadKeys);
+		}
+		else
+		{
+			keys     = swkbdInternalState->shiftActivated ? kShiftedKeys : kNormalKeys;
+			keyCount = swkbdInternalState->shiftActivated ? std::size(kShiftedKeys) : std::size(kNormalKeys);
+		}
+
+		// Numpad: key width sized for 3 columns at 40% of canvas.
+		// Each row is independently centred based on its actual key count.
+		const float numpadKeyW = (cW * 0.40f - kItemSpX * 2.0f) / 3.0f;
+		const float numpadSpcW = numpadKeyW;
+		// All rows (including the action row) centre on 3 keys.
+		// Row 0 renders a 4th key (⌫) via SameLine after the 3-digit block
+		// without shifting the digit columns.
+		static constexpr int kNumpadRowKeyCounts[] = { 3, 3, 3, 3, 3 };
+		const auto numpadRowIndentX = [&](int r) {
+			const int n = kNumpadRowKeyCounts[r];
+			return (ImGui::GetWindowWidth() - (numpadKeyW * n + kItemSpX * (n - 1))) * 0.5f;
+		};
+
+		// Start the first row at the centred position.
+		if (isNumpad)
+			ImGui::SetCursorPosX(numpadRowIndentX(0));
+
 		int curRow = 0, curCol = 0;
 		for (size_t ki = 0; ki < keyCount; ki++)
 		{
@@ -683,19 +897,48 @@ void swkbd_render(bool mainWindow)
 				curRow++;
 				curCol = 0;
 				ImGui::NewLine();
+				if (isNumpad)
+					ImGui::SetCursorPosX(numpadRowIndentX(curRow));
 				continue;
 			}
-			const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
-			if (navSel)
+			// A character key is "disabled" if its character is not accepted in the
+			// current keyboard mode.  The ✓ key is also disabled when okButtonMode
+			// requires input but the field is still empty.
+			const bool isIconKey  = (*key & 0x80) != 0; // FontAwesome uses high-byte codepoints
+			const bool isOkKey    = strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0;
+			const sint32 curLen  = swkbdInternalState->formStringLength;
+			const sint32 maxLen  = swkbdInternalState->maxTextLength;
+			const sint32 minLen  = swkbdInternalState->minTextLength;
+			const uint32 okMode  = swkbdInternalState->okButtonMode;
+			const bool isOkDisabled = isOkKey && (
+			    (okMode == 0 && curLen < minLen) ||    // must meet minimum length
+			    (okMode == 1 && curLen < maxLen));      // must fill to the limit
+			const bool isDisabled = isOkDisabled || (!isIconKey && !swkbd_isCharAllowed((uint8)*key));
+
+			const bool navSel = !isDisabled && (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
+			int stylePushCount = 0;
+			if (isDisabled)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+				ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.40f, 0.40f, 0.40f, 1.00f));
+				stylePushCount = 4;
+			}
+			else if (navSel)
 			{
 				ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
+				stylePushCount = 3;
 			}
-			ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-			const bool triggered = ImGui::IsItemClicked();
-			if (navSel)
-				ImGui::PopStyleColor(3);
+			const float btnW = isNumpad
+				? (*key == ' ' ? numpadSpcW : numpadKeyW)
+				: (*key == ' ' ? spaceWidth : keyWidth);
+			ImGui::Button(key, { btnW, keyHeight });
+			const bool triggered = !isDisabled && ImGui::IsItemClicked();
+			if (stylePushCount > 0)
+				ImGui::PopStyleColor(stylePushCount);
 			if (triggered)
 			{
 				if      (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)             swkbdInternalState->cancelButtonWasPressed = true;
@@ -767,8 +1010,14 @@ void swkbd_render(bool mainWindow)
 		{
 
 		// ── D-pad: edge-triggered grid navigation ────────────────────────────
-		static constexpr int kRowSizes[] = { 12, 11, 11, 11, 4 };
-		static constexpr int kNumRows    = 5;
+		// Row sizes differ between QWERTY and numpad.
+		// Numpad rows: 4 / 3 / 3 / 3 / 3  (1-2-3-⌫ / 4-5-6 / 7-8-9 / ·-0-· / ×-spc-✓)
+		// Row 3 spacers count as nav cells; isNavCellDisabled skips them automatically.
+		static constexpr int kQwertyRowSizes[] = { 12, 11, 11, 11, 4 };
+		static constexpr int kNumpadRowSizes[] = {  4,  3,  3,  3, 3 };
+		const bool isNumpadNav = (swkbdInternalState->fullWidthMode == 0 && (swkbdInternalState->disableKeyGroup & (1u << 15)) != 0);
+		const int* kRowSizes   = isNumpadNav ? kNumpadRowSizes : kQwertyRowSizes;
+		const int  kNumRows    = 5;
 
 		int& row = swkbdInternalState->navRow;
 		int& col = swkbdInternalState->navCol;
@@ -798,34 +1047,89 @@ void swkbd_render(bool mainWindow)
 		swkbdInternalState->shoulderLHeld = shoulderLNow;
 		swkbdInternalState->shoulderRHeld = shoulderRNow;
 
-		// ── L3 (left stick click): toggle shift ──────────────────────────────
+		// ── L3 (left stick click): toggle shift — no-op in numpad mode ──────
 		const bool lstickNow = axisLStickClick > 0.5f;
-		if (lstickNow && !swkbdInternalState->lstickHeld)
+		if (lstickNow && !swkbdInternalState->lstickHeld && !isNumpadNav)
 			swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
 		swkbdInternalState->lstickHeld = lstickNow;
+
+		// ── Skip disabled character keys during d-pad navigation ─────────────
+		// If the cursor landed on a greyed-out character, advance in the same
+		// direction until a non-disabled key is found (wraps at row boundary).
+		{
+			auto isNavCellDisabled = [&]() -> bool {
+				// Rebuild which key is at (row,col) for the current layout.
+				if (isNumpadNav)
+				{
+					static const char* kNavNumpad[] = {
+						"1","2","3",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+						"4","5","6","\n",
+						"7","8","9","\n",
+						"","0","","\n",
+						_utf8WrapperPtr(ICON_FA_TIMES)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+					};
+					static constexpr int kNPRowStart[] = { 0, 5, 9, 13, 17 };
+					const char* k = kNavNumpad[kNPRowStart[row] + col];
+					const bool isIcon = (*k & 0x80) != 0;
+					return !isIcon && !swkbd_isCharAllowed((uint8)*k);
+				}
+				return false; // QWERTY has no disabled keys
+			};
+			if (isNavCellDisabled())
+			{
+				// Walk in the same direction as the button that was pressed so that
+				// navigating left skips left through disabled cells (and right skips right).
+				// For vertical moves (up/down) default to walking right.
+				const int skipDir = (pressed & 1) ? -1 : 1;
+				for (int attempt = 0; attempt < kRowSizes[row]; attempt++)
+				{
+					if (skipDir > 0)
+						col = (col < kRowSizes[row] - 1) ? col + 1 : 0;
+					else
+						col = (col > 0) ? col - 1 : kRowSizes[row] - 1;
+					if (!isNavCellDisabled()) break;
+				}
+			}
+		}
 
 		// ── A: activate the highlighted key ──────────────────────────────────
 		const bool activateNow = axisActivate > 0.5f;
 		if (activateNow && !swkbdInternalState->activateHeld)
 		{
-			// Map (row, col) back to a key string using the same arrays as the
-			// render loop.  Row start indices account for the '\n' separators.
-			static constexpr int kRowStart[] = { 0, 13, 25, 37, 49 };
-			const char* kNormal[] = {
-				"1","2","3","4","5","6","7","8","9","0","-",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
-				"q","w","e","r","t","y","u","i","o","p","/","\n",
-				"a","s","d","f","g","h","j","k","l",":","'","\n",
-				"z","x","c","v","b","n","m",",",".","?","!","\n",
-				_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
-			};
-			const char* kShifted[] = {
-				"#","[","]","$","%","^","&","*","(",")","\x5f",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
-				"Q","W","E","R","T","Y","U","I","O","P","@","\n",
-				"A","S","D","F","G","H","J","K","L",";","\"","\n",
-				"Z","X","C","V","B","N","M","<",">","+","=","\n",
-				_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
-			};
-			const char* key = (swkbdInternalState->shiftActivated ? kShifted : kNormal)[kRowStart[row] + col];
+			// Map (row, col) → key string using the same arrays as the render loop.
+			// Row start indices account for the '\n' separators in each flat array.
+			const char* key = nullptr;
+			if (isNumpadNav)
+			{
+				static constexpr int kNumpadRowStart[] = { 0, 5, 9, 13, 17 };
+				static const char* kNavNumpad[] = {
+					"1","2","3",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+					"4","5","6","\n",
+					"7","8","9","\n",
+					"","0","","\n",
+					_utf8WrapperPtr(ICON_FA_TIMES)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+				};
+				key = kNavNumpad[kNumpadRowStart[row] + col];
+			}
+			else
+			{
+				static constexpr int kQwertyRowStart[] = { 0, 13, 25, 37, 49 };
+				const char* kNormal[] = {
+					"1","2","3","4","5","6","7","8","9","0","-",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+					"q","w","e","r","t","y","u","i","o","p","/","\n",
+					"a","s","d","f","g","h","j","k","l",":","'","\n",
+					"z","x","c","v","b","n","m",",",".","?","!","\n",
+					_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+				};
+				const char* kShifted[] = {
+					"#","[","]","$","%","^","&","*","(",")","\x5f",_utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT),"\n",
+					"Q","W","E","R","T","Y","U","I","O","P","@","\n",
+					"A","S","D","F","G","H","J","K","L",";","\"","\n",
+					"Z","X","C","V","B","N","M","<",">","+","=","\n",
+					_utf8WrapperPtr(ICON_FA_TIMES),_utf8WrapperPtr(ICON_FA_ARROW_UP)," ",_utf8WrapperPtr(ICON_FA_CHECK)
+				};
+				key = (swkbdInternalState->shiftActivated ? kShifted : kNormal)[kQwertyRowStart[row] + col];
+			}
 			if      (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)             swkbdInternalState->cancelButtonWasPressed = true;
 			else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0) swkbd_keyInput(8);
 			else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)          swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
@@ -860,8 +1164,16 @@ bool swkbd_hasKeyboardInputHook()
 
 void swkbd_finishInput()
 {
-	if (swkbdInternalState->formStringLength == 0)
-		return; // native swkbd does not confirm empty input; keep keyboard open
+	const sint32 len      = swkbdInternalState->formStringLength;
+	const sint32 maxLen   = swkbdInternalState->maxTextLength;
+	const sint32 minLen   = swkbdInternalState->minTextLength;
+	const uint32 okMode   = swkbdInternalState->okButtonMode;
+	// okButtonMode=0: must have at least minTextLength characters (≥1 by default).
+	// okButtonMode=1: must fill to maxTextLength.
+	if (okMode == 0 && len < minLen)
+		return;
+	if (okMode == 1 && len < maxLen)
+		return;
 	swkbdInternalState->decideButtonWasPressed = true;
 }
 
@@ -932,27 +1244,11 @@ void swkbd_keyInput(uint32 keyCode)
 		swkbd_finishInput();
 		return;
 	}
-	// check if allowed character
-	if ((keyCode >= 'a' && keyCode <= 'z') ||
-		(keyCode >= 'A' && keyCode <= 'Z'))
-	{
-		// allowed
-	}
-	else if ((keyCode >= '0' && keyCode <= '9'))
-	{
-		// allowed
-	}
-	else if (keyCode == ' ' || keyCode == '.' || keyCode == '/' || keyCode == '?' || keyCode == '=')
-	{
-		// allowed
-	}
-	else if (keyCode < 32)
-	{
-		// control key
+	// Reject control characters and any character not allowed in the current mode
+	// (e.g. non-digits in numpad mode).  This gate applies to both on-screen button
+	// presses and physical keyboard input.
+	if (!swkbd_isCharAllowed(keyCode))
 		return;
-	}
-	else
-		;// return;
 	// get max length
 	sint32 maxLength = swkbdInternalState->maxTextLength;
 	if (swkbdInternalState->keyboardOnlyMode)

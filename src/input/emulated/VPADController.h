@@ -85,6 +85,9 @@ public:
 	bool is_a_down() const override { return is_mapping_down(kButtonId_A); }
 	bool is_b_down() const override { return is_mapping_down(kButtonId_B); }
 	bool is_home_down() const override { return is_mapping_down(kButtonId_Home); }
+	bool is_l_down() const override { return is_mapping_down(kButtonId_L); }
+	bool is_r_down() const override { return is_mapping_down(kButtonId_R); }
+	bool is_lstick_click_down() const override { return is_mapping_down(kButtonId_StickL); }
 
 	bool set_default_mapping(const std::shared_ptr<ControllerBase>& controller) override;
 

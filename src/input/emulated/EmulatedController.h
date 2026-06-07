@@ -97,6 +97,9 @@ public:
 	virtual bool is_a_down() const = 0;
 	virtual bool is_b_down() const = 0;
 	virtual bool is_home_down() const = 0;
+	virtual bool is_l_down() const { return false; }
+	virtual bool is_r_down() const { return false; }
+	virtual bool is_lstick_click_down() const { return false; }
 
 	bool was_home_button_down() { return std::exchange(m_homebutton_down, false); }
 

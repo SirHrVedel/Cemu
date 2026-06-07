@@ -220,20 +220,25 @@ typedef struct
 
 static_assert(offsetof(swkbdAppearArg_t, cursorIndex) == 0xC4, "appearArg.cursorIndex has invalid offset");
 
-void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
+static void swkbd_resetNavState()
 {
-	ppcDefineParamStructPtr(appearArg, swkbdAppearArg_t, 0);
-	cemuLog_logDebug(LogType::Force, "SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg");
-	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->infoTextBuffer[0] = L'\0';
-	swkbdInternalState->navRow      = 0;
-	swkbdInternalState->navCol      = 0;
+	swkbdInternalState->navRow        = 0;
+	swkbdInternalState->navCol        = 0;
 	swkbdInternalState->cursorPos     = 0;
 	swkbdInternalState->navHeldDirs   = 0;
 	swkbdInternalState->activateHeld  = false;
 	swkbdInternalState->shoulderLHeld = false;
 	swkbdInternalState->shoulderRHeld = false;
 	swkbdInternalState->lstickHeld    = false;
+}
+
+void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
+{
+	ppcDefineParamStructPtr(appearArg, swkbdAppearArg_t, 0);
+	cemuLog_logDebug(LogType::Force, "SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg");
+	swkbdInternalState->formStringLength = 0;
+	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->decideButtonWasPressed = false;
 	swkbdInternalState->cancelButtonWasPressed = false;
@@ -306,15 +311,7 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	}
 
 	swkbdInternalState->formStringLength = 0;
-	swkbdInternalState->infoTextBuffer[0] = L'\0';
-	swkbdInternalState->navRow      = 0;
-	swkbdInternalState->navCol      = 0;
-	swkbdInternalState->cursorPos     = 0;
-	swkbdInternalState->navHeldDirs   = 0;
-	swkbdInternalState->activateHeld  = false;
-	swkbdInternalState->shoulderLHeld = false;
-	swkbdInternalState->shoulderRHeld = false;
-	swkbdInternalState->lstickHeld    = false;
+	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
 	swkbdInternalState->keyboardOnlyMode = true;
 	swkbdInternalState->decideButtonWasPressed = false;
@@ -500,25 +497,21 @@ void swkbd_render(bool mainWindow)
 	// One atlas entry at a fixed base size; per-window vertex scaling via
 	// SetWindowFontScale() gives any target size without atlas rebuilds.
 	// Base 64 px: downscales cleanly to 720p/1080p, slight upscale at 4K.
-	//
-	//   Target sizes at 720p (scale=1):
-	//     keyboard buttons  36 px  kbdScale   = 36/64
-	//     input field       52 px  inputScale = 52/64
-	//     info label        40 px  infoScale  = 40/64
+	// All UI elements render at 52 px equivalent at 720p.
 	constexpr float kBaseFontSz = 64.0f;
 	const auto baseFont = ImGui_GetFont(kBaseFontSz);
 	if (!baseFont)
 		return; // font queued for loading; renders correctly next frame
-	const float kbdScale   = (52.0f * scale) / kBaseFontSz;
-	const float inputScale = (52.0f * scale) / kBaseFontSz;
-	const float infoScale  = (52.0f * scale) / kBaseFontSz;
+	const float uiScale = (52.0f * scale) / kBaseFontSz;
 
 	// ── Layout metrics ────────────────────────────────────────────────────────
-	const float kWinPadX  = ImGui::GetStyle().WindowPadding.x;
-	const float kWinPadY  = ImGui::GetStyle().WindowPadding.y;
-	const float kItemSpX  = ImGui::GetStyle().ItemSpacing.x;
-	const float kItemSpY  = ImGui::GetStyle().ItemSpacing.y;
-	const float kInnerW   = cW - kWinPadX * 2.0f;
+	const auto& style    = ImGui::GetStyle();
+	const float kWinPadX = style.WindowPadding.x;
+	const float kWinPadY = style.WindowPadding.y;
+	const float kItemSpX = style.ItemSpacing.x;
+	const float kItemSpY = style.ItemSpacing.y;
+	const float kFramePadY = style.FramePadding.y;
+	const float kInnerW  = cW - kWinPadX * 2.0f;
 	// 12 keys fill the full canvas width (widest row: digits + backspace).
 	const float keyWidth   = (kInnerW - kItemSpX * 11.0f) / 12.0f;
 	// Space bar fills what remains after back, shift, and enter on the bottom row.
@@ -549,9 +542,8 @@ void swkbd_render(bool mainWindow)
 
 	// The info label and input box are treated as one visual group whose combined
 	// height is centred on the middle of the upper half of the canvas.
-	const float anchorY      = canvasMin.y + cH * 0.25f;
-	const float fieldWidth   = cW * 0.8f;
-	const float kFramePadY  = ImGui::GetStyle().FramePadding.y;
+	const float anchorY    = canvasMin.y + cH * 0.25f;
+	const float fieldWidth = cW * 0.8f;
 	// Estimated single-line height of the input box (font + padding).
 	const float inputH      = 52.0f * scale + 2.0f * kWinPadY + 2.0f * kFramePadY;
 	// Info text uses a bottom pivot so multi-line text grows upward, never
@@ -561,51 +553,49 @@ void swkbd_render(bool mainWindow)
 	// Info label — transparent, bottom-pivot, centre-aligned word-wrapped text.
 	if (swkbdInternalState->infoTextBuffer[0] != L'\0')
 	{
-		 const auto infoStr = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->infoTextBuffer));
-    ImGui::SetNextWindowBgAlpha(0.0f);
-    ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
-    ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, infoBottomY },
-                            ImGuiCond_Always, { 0.5f, 1.0f });
-    ImGui::PushFont(baseFont);
-    if (ImGui::Begin("Keyboard Info Label", nullptr, kPopupFlags | ImGuiWindowFlags_NoBackground))
-    {
-      ImGui::SetWindowFontScale(infoScale);
-      // SetCursorPosX is relative to the window left edge (not content region),
-      // so use GetWindowWidth() as the container for the centering formula.
-      // Wrap still guards against the content area (minus padding on both sides).
-      const float windowW  = ImGui::GetWindowWidth();
-      const float wrapW    = windowW - 2.0f * kWinPadX;
-	  auto flushLine = [&](const std::string& line)
-
-		
+		const auto infoStr = boost::nowide::narrow(swkbdInternalState->infoTextBuffer);
+		ImGui::SetNextWindowBgAlpha(0.0f);
+		ImGui::SetNextWindowSizeConstraints({ fieldWidth, 0.0f }, { fieldWidth, FLT_MAX });
+		ImGui::SetNextWindowPos({ canvasMin.x + cW * 0.5f, infoBottomY },
+		                        ImGuiCond_Always, { 0.5f, 1.0f });
+		ImGui::PushFont(baseFont);
+		if (ImGui::Begin("Keyboard Info Label", nullptr, kPopupFlags | ImGuiWindowFlags_NoBackground))
+		{
+			ImGui::SetWindowFontScale(uiScale);
+			// SetCursorPosX is relative to the window left edge (not content region),
+			// so use GetWindowWidth() as the container for the centering formula.
+			// Wrap still guards against the content area (minus padding on both sides).
+			const float windowW = ImGui::GetWindowWidth();
+			const float wrapW   = windowW - 2.0f * kWinPadX;
+			auto flushLine = [&](const std::string& line)
 			{
-		  if (line.empty())
-			  return;
-		  const float lineW = ImGui::CalcTextSize(line.c_str()).x;
-		  ImGui::SetCursorPosX((windowW - lineW) * 0.5f);
-		  ImGui::TextUnformatted(line.c_str());
-	  };
+				if (line.empty())
+					return;
+				const float lineW = ImGui::CalcTextSize(line.c_str()).x;
+				ImGui::SetCursorPosX((windowW - lineW) * 0.5f);
+				ImGui::TextUnformatted(line.c_str());
+			};
 
-	  std::string currentLine;
-	  const char* p = infoStr.c_str();
-	  while (*p)
-	  {
-		  const char* wordStart = p;
-		  while (*p && *p != ' ')
-			  ++p;
-		  std::string word(wordStart, p);
-		  if (*p == ' ')
-			  ++p;
-		  std::string testLine = currentLine.empty() ? word : currentLine + ' ' + word;
-		  if (!currentLine.empty() && ImGui::CalcTextSize(testLine.c_str()).x > wrapW)
-		  {
-			  flushLine(currentLine);
-			  currentLine = std::move(word);
-		  }
-		  else
-		  {
-			  currentLine = std::move(testLine);
-		  }
+			std::string currentLine;
+			const char* p = infoStr.c_str();
+			while (*p)
+			{
+				const char* wordStart = p;
+				while (*p && *p != ' ')
+					++p;
+				std::string word(wordStart, p);
+				if (*p == ' ')
+					++p;
+				std::string testLine = currentLine.empty() ? word : currentLine + ' ' + word;
+				if (!currentLine.empty() && ImGui::CalcTextSize(testLine.c_str()).x > wrapW)
+				{
+					flushLine(currentLine);
+					currentLine = std::move(word);
+				}
+				else
+				{
+					currentLine = std::move(testLine);
+				}
 			}
 			flushLine(currentLine);
 		}
@@ -625,10 +615,10 @@ void swkbd_render(bool mainWindow)
 		ImGui::PushFont(baseFont);
 		if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
 		{
-			ImGui::SetWindowFontScale(inputScale);
+			ImGui::SetWindowFontScale(uiScale);
 			ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
 			ImGui::SameLine(0, 8);
-			auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
+			auto text = boost::nowide::narrow(swkbdInternalState->formStringBuffer);
 
 			static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
 			static bool s_blink_state = false;
@@ -663,104 +653,59 @@ void swkbd_render(bool mainWindow)
 	ImGui::SetNextWindowBgAlpha(0.9f * eased);
 	ImGui::PushFont(baseFont);
 
-	if (ImGui::Begin(fmt::format("Software keyboard##SoftwareKeyboard{}",mainWindow).c_str(), nullptr, kPopupFlags))
+	if (ImGui::Begin(mainWindow ? "Software keyboard##SoftwareKeyboard1" : "Software keyboard##SoftwareKeyboard0", nullptr, kPopupFlags))
 	{
-		ImGui::SetWindowFontScale(kbdScale);
-		if(swkbdInternalState->shiftActivated)
+		ImGui::SetWindowFontScale(uiScale);
+		static const char* kNormalKeys[] =
 		{
-			const char* keys[] =
-			{
-				"#", "[", "]", "$", "%", "^", "&", "*", "(", ")", "_", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",
-				"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "@", "\n",
-				"A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "\"", "\n",
-				"Z", "X", "C", "V", "B", "N", "M", "<", ">", "+", "=", "\n",
-				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
-			};
-			int curRow = 0, curCol = 0;
-			for (auto key : keys)
-			{
-				if (*key == '\n')
-				{
-					curRow++;
-					curCol = 0;
-					ImGui::NewLine();
-					continue;
-				}
-				const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
-				if (navSel)
-				{
-					ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
-				}
-				ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-				const bool triggered = ImGui::IsItemClicked();
-				if (navSel)
-					ImGui::PopStyleColor(3);
-				if (triggered)
-				{
-					if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-						swkbdInternalState->cancelButtonWasPressed = true;
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
-						swkbd_keyInput(8);
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
-						swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
-						swkbd_keyInput(13);
-					else
-						swkbd_keyInput(*key);
-				}
-				ImGui::SameLine();
-				curCol++;
-			}
-		}
-		else
+			"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",
+			"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "/", "\n",
+			"a", "s", "d", "f", "g", "h", "j", "k", "l", ":", "'", "\n",
+			"z", "x", "c", "v", "b", "n", "m", ",", ".", "?", "!", "\n",
+			_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
+		};
+		static const char* kShiftedKeys[] =
 		{
-			const char* keys[] =
+			"#", "[", "]", "$", "%", "^", "&", "*", "(", ")", "_", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",
+			"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "@", "\n",
+			"A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "\"", "\n",
+			"Z", "X", "C", "V", "B", "N", "M", "<", ">", "+", "=", "\n",
+			_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
+		};
+		const char* const* keys = swkbdInternalState->shiftActivated ? kShiftedKeys : kNormalKeys;
+		const size_t keyCount   = swkbdInternalState->shiftActivated ? std::size(kShiftedKeys) : std::size(kNormalKeys);
+		int curRow = 0, curCol = 0;
+		for (size_t ki = 0; ki < keyCount; ki++)
+		{
+			const char* key = keys[ki];
+			if (*key == '\n')
 			{
-				"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT), "\n",
-				"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "/", "\n",
-				"a", "s", "d", "f", "g", "h", "j", "k", "l", ":", "'", "\n",
-				"z", "x", "c", "v", "b", "n", "m", ",", ".", "?", "!", "\n",
-				_utf8WrapperPtr(ICON_FA_TIMES), _utf8WrapperPtr(ICON_FA_ARROW_UP), " ", _utf8WrapperPtr(ICON_FA_CHECK)
-			};
-			int curRow = 0, curCol = 0;
-			for (auto key : keys)
-			{
-				if (*key == '\n')
-				{
-					curRow++;
-					curCol = 0;
-					ImGui::NewLine();
-					continue;
-				}
-				const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
-				if (navSel)
-				{
-					ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
-				}
-				ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
-				const bool triggered = ImGui::IsItemClicked();
-				if (navSel)
-					ImGui::PopStyleColor(3);
-				if (triggered)
-				{
-					if (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)
-						swkbdInternalState->cancelButtonWasPressed = true;
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
-						swkbd_keyInput(8);
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)
-						swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
-					else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)
-						swkbd_keyInput(13);
-					else
-						swkbd_keyInput(*key);
-				}
-				ImGui::SameLine();
-				curCol++;
+				curRow++;
+				curCol = 0;
+				ImGui::NewLine();
+				continue;
 			}
+			const bool navSel = (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
+			if (navSel)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.50f, 0.90f, 1.00f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.60f, 1.00f, 1.00f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.40f, 0.80f, 1.00f));
+			}
+			ImGui::Button(key, { *key == ' ' ? spaceWidth : keyWidth, keyHeight });
+			const bool triggered = ImGui::IsItemClicked();
+			if (navSel)
+				ImGui::PopStyleColor(3);
+			if (triggered)
+			{
+				if      (strcmp(key, _utf8WrapperPtr(ICON_FA_TIMES)) == 0)             swkbdInternalState->cancelButtonWasPressed = true;
+				else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0) swkbd_keyInput(8);
+				else if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_UP)) == 0)          swkbdInternalState->shiftActivated = !swkbdInternalState->shiftActivated;
+				else if (strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0)             swkbd_keyInput(13);
+				else                                                                    swkbd_keyInput(*key);
+			}
+			ImGui::SameLine();
+			curCol++;
 		}
 		ImGui::NewLine();
 	}
@@ -890,24 +835,16 @@ void swkbd_render(bool mainWindow)
 		swkbdInternalState->activateHeld = activateNow;
 
 		// ── B: backspace ──────────────────────────────────────────────────────
-		if (axisCancel > 0.5f)
-		{
-			if (!swkbdInternalState->cancelState)
-				swkbd_keyInput(8);
-			swkbdInternalState->cancelState = true;
-		}
-		else
-			swkbdInternalState->cancelState = false;
+		const bool cancelNow = axisCancel > 0.5f;
+		if (cancelNow && !swkbdInternalState->cancelState)
+			swkbd_keyInput(8);
+		swkbdInternalState->cancelState = cancelNow;
 
 		// ── Start: confirm ────────────────────────────────────────────────────
-		if (axisInput > 0.5f)
-		{
-			if (!swkbdInternalState->returnState)
-				swkbd_keyInput(13);
-			swkbdInternalState->returnState = true;
-		}
-		else
-			swkbdInternalState->returnState = false;
+		const bool returnNow = axisInput > 0.5f;
+		if (returnNow && !swkbdInternalState->returnState)
+			swkbd_keyInput(13);
+		swkbdInternalState->returnState = returnNow;
 		} // else (animation complete)
 	} // if (mainWindow)
 

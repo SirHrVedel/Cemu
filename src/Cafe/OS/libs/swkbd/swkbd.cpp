@@ -88,7 +88,7 @@ typedef struct
 	wchar_t infoTextBuffer[256];
 	// keyboard layout mode (set from appearArg when keyboard appears)
 	uint32 inputType;
-	uint32 okButtonMode;      // 0=normal OK (allows empty), 1=enterPress (requires input), 2=disabled
+	uint32 okButtonMode;      // 0=normal (≥minTextLength chars), 1=enterPress (same), 2=always disabled, 3=always enabled; ≥4 clamped→0
 	uint32 fullWidthMode;     // 0=half-width (ASCII), 1=full-width (wide/Japanese)
 	uint32 disableKeyGroup;   // bitmask of disabled key groups; bit 15 = alphabetic group
 	uint32 inputFormType;     // 0=single-line input, 1=multi-line (large) input
@@ -97,6 +97,9 @@ typedef struct
 	bool shiftActivated;
 	bool returnState;
 	bool cancelState;
+	// OK button explicit override (set by SwkbdSetEnableOkButton)
+	bool okButtonHasOverride;  // true when SwkbdSetEnableOkButton has been called
+	bool okButtonDisabledByOverride; // !arg passed to SetEnableOkButton
 	// text input cursor (insertion point within formStringBuffer)
 	sint32 cursorPos;
 	// controller cursor position on the key grid
@@ -299,9 +302,12 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 	swkbdInternalState->fullWidthMode    = (uint32)appearArg->fullWidthMode;
 	swkbdInternalState->disableKeyGroup  = (uint32)appearArg->disableKeyGroup;
 	swkbdInternalState->inputFormType    = (uint32)appearArg->inputFormType;
-	// TODO: parse minTextLength from appearArg once its struct offset is confirmed via the field dump.
-	// For okMode=0 the real minimum is ≥1; default to 1 until the field is identified.
+	// minTextLength has no dedicated AppearArg field. Modes 0 and 1 require ≥1 char.
+	// Mode 2 = disabled, mode 3 = always enabled (even with 0 chars).
 	swkbdInternalState->minTextLength    = 1;
+	// Clear any game-set OK button override from a previous session.
+	swkbdInternalState->okButtonHasOverride      = false;
+	swkbdInternalState->okButtonDisabledByOverride = false;
 	swkbdInternalState->formStringLength = 0;
 	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
@@ -425,9 +431,11 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	swkbdInternalState->inputType        = 0;
 	swkbdInternalState->okButtonMode     = 0;
 	swkbdInternalState->fullWidthMode    = 1; // AppearKeyboard has no fullWidthMode; default to full-width (QWERTY)
-	swkbdInternalState->disableKeyGroup  = 0; // no key groups disabled by default
+	swkbdInternalState->disableKeyGroup  = 0;
 	swkbdInternalState->inputFormType    = 0;
-	swkbdInternalState->minTextLength    = 1; // okMode=0: require at least one character
+	swkbdInternalState->minTextLength    = 1;
+	swkbdInternalState->okButtonHasOverride      = false;
+	swkbdInternalState->okButtonDisabledByOverride = false;
 	swkbdInternalState->formStringLength = 0;
 	swkbd_resetNavState();
 	swkbdInternalState->isActive = true;
@@ -478,6 +486,21 @@ void swkbdExport_SwkbdIsDecideCancelButton(PPCInterpreter_t* hCPU)
 		osLib_returnFromFunction(hCPU, 1);
 	else
 		osLib_returnFromFunction(hCPU, 0);
+}
+
+void swkbdExport_SwkbdSetEnableOkButton(PPCInterpreter_t* hCPU)
+{
+	// Real firmware stores !bool to instance+0x12c (disabled flag) and 1 to +0x12e
+	// (override-active flag). Here we mirror that with two bools.
+	if (swkbdInternalState == nullptr)
+	{
+		osLib_returnFromFunction(hCPU, 0);
+		return;
+	}
+	const bool enabled = hCPU->gpr[3] != 0;
+	swkbdInternalState->okButtonHasOverride      = true;
+	swkbdInternalState->okButtonDisabledByOverride = !enabled;
+	osLib_returnFromFunction(hCPU, 0);
 }
 
 typedef struct  
@@ -549,6 +572,36 @@ static bool swkbd_isCharAllowed(uint32 keyCode)
 	if (swkbdInternalState->fullWidthMode == 0 && (swkbdInternalState->disableKeyGroup & (1u << 15)))
 		return keyCode >= '0' && keyCode <= '9';
 	return true;
+}
+
+// Single source of truth for whether the OK/confirm button is currently enabled.
+// Called from both the render code (to grey the key) and swkbd_finishInput (to gate confirm).
+//
+// Real firmware logic (from swkbd.rpl disasm):
+//   okMode 0 = normal:        enabled when textLen >= minTextLength (default 1)
+//   okMode 1 = enterPress:    same threshold as mode 0 (require at least 1 char)
+//   okMode 2 = disabled:      always disabled
+//   okMode 3 = always-on:     enabled even with 0 chars (confirmed as 0..3 enum, ≥4→0)
+// Additionally, SwkbdSetEnableOkButton() overrides all of the above.
+static bool swkbd_isOkButtonEnabled()
+{
+	const uint32 okMode = swkbdInternalState->okButtonMode;
+	const sint32 curLen = swkbdInternalState->formStringLength;
+	const sint32 minLen = swkbdInternalState->minTextLength;
+
+	bool enabled;
+	if (okMode == 2)
+		enabled = false;
+	else if (okMode == 3)
+		enabled = true;
+	else // mode 0 or 1: need at least minTextLength characters
+		enabled = (curLen >= minLen);
+
+	// Game-set override takes precedence over mode-based rule.
+	if (swkbdInternalState->okButtonHasOverride)
+		enabled = !swkbdInternalState->okButtonDisabledByOverride;
+
+	return enabled;
 }
 
 void swkbd_render(bool mainWindow)
@@ -906,14 +959,8 @@ void swkbd_render(bool mainWindow)
 			// requires input but the field is still empty.
 			const bool isIconKey  = (*key & 0x80) != 0; // FontAwesome uses high-byte codepoints
 			const bool isOkKey    = strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0;
-			const sint32 curLen  = swkbdInternalState->formStringLength;
-			const sint32 maxLen  = swkbdInternalState->maxTextLength;
-			const sint32 minLen  = swkbdInternalState->minTextLength;
-			const uint32 okMode  = swkbdInternalState->okButtonMode;
-			const bool isOkDisabled = isOkKey && (
-			    (okMode == 0 && curLen < minLen) ||    // must meet minimum length
-			    (okMode == 1 && curLen < maxLen));      // must fill to the limit
-			const bool isDisabled = isOkDisabled || (!isIconKey && !swkbd_isCharAllowed((uint8)*key));
+			const bool isDisabled = (!isIconKey && !swkbd_isCharAllowed((uint8)*key))
+			                     || (isOkKey && !swkbd_isOkButtonEnabled());
 
 			const bool navSel = !isDisabled && (curRow == swkbdInternalState->navRow && curCol == swkbdInternalState->navCol);
 			int stylePushCount = 0;
@@ -1164,15 +1211,7 @@ bool swkbd_hasKeyboardInputHook()
 
 void swkbd_finishInput()
 {
-	const sint32 len      = swkbdInternalState->formStringLength;
-	const sint32 maxLen   = swkbdInternalState->maxTextLength;
-	const sint32 minLen   = swkbdInternalState->minTextLength;
-	const uint32 okMode   = swkbdInternalState->okButtonMode;
-	// okButtonMode=0: must have at least minTextLength characters (≥1 by default).
-	// okButtonMode=1: must fill to maxTextLength.
-	if (okMode == 0 && len < minLen)
-		return;
-	if (okMode == 1 && len < maxLen)
+	if (!swkbd_isOkButtonEnabled())
 		return;
 	swkbdInternalState->decideButtonWasPressed = true;
 }
@@ -1300,6 +1339,7 @@ namespace swkbd
 			osLib_addFunction("swkbd", "SwkbdGetInputFormString__3RplFv", swkbdExport_SwkbdGetInputFormString);
 			osLib_addFunction("swkbd", "SwkbdIsDecideOkButton__3RplFPb", swkbdExport_SwkbdIsDecideOkButton);
 			osLib_addFunction("swkbd", "SwkbdIsDecideCancelButton__3RplFPb", swkbdExport_SwkbdIsDecideCancelButton);
+			osLib_addFunction("swkbd", "SwkbdSetEnableOkButton__3RplFb", swkbdExport_SwkbdSetEnableOkButton);
 			osLib_addFunction("swkbd", "SwkbdInitLearnDic__3RplFPv", swkbdExport_SwkbdInitLearnDic);
 			osLib_addFunction("swkbd", "SwkbdGetDrawStringInfo__3RplFPQ3_2nn5swkbd14DrawStringInfo", swkbdExport_SwkbdGetDrawStringInfo);
 			osLib_addFunction("swkbd", "SwkbdIsNeedCalcSubThreadFont__3RplFv", swkbdExport_SwkbdIsNeedCalcSubThreadFont);

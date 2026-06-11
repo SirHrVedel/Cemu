@@ -1057,13 +1057,16 @@ namespace CafeSystem
 		if (sGameInfo_ForegroundTitle.GetUpdate().IsValid())
 		{
 			MlcStorageMountTitle(sGameInfo_ForegroundTitle.GetUpdate());
-			// overlay update files on top of the base's MLC path with patch priority so that
-			// any VFS reader (HOME menu, ACP, shader cache) transparently gets update meta
-			// for files not present in the update the base files are used as fallback
-			std::string baseMlcPath = GetMlcStoragePath(sGameInfo_ForegroundTitle.GetBase().GetAppTitleId());
+			// overlay only the update's meta/ directory on top of the base's meta/ path
+			// this lets VFS readers (HOME menu, ACP, shader cache) get the update's icons,
+			// names, and boot assets transparently, with fallback to base for absent files.
+			// we must NOT overlay code/ or content/ here — code/app.xml contains the update
+			// title ID and would cause OSLaunchTitleByPathl to launch with the wrong ID,
+			// breaking saves. code/content overlaying is handled by LoadAndMountForegroundTitle.
+			std::string baseMetaPath = GetMlcStoragePath(sGameInfo_ForegroundTitle.GetBase().GetAppTitleId()) + "/meta";
 			TitleInfo* patchMount = new TitleInfo(sGameInfo_ForegroundTitle.GetUpdate());
-			if (patchMount->Mount(baseMlcPath, "", FSC_PRIORITY_PATCH))
-				m_mlcPatchMounts.emplace_back(patchMount, baseMlcPath);
+			if (patchMount->Mount(baseMetaPath, "meta", FSC_PRIORITY_PATCH))
+				m_mlcPatchMounts.emplace_back(patchMount, baseMetaPath);
 			else
 				delete patchMount;
 		}
@@ -1122,15 +1125,15 @@ namespace CafeSystem
 		TitleInfo updateInfo;
 		if (!CafeTitleList::GetFirstByTitleId(updateTitleId, updateInfo))
 			return;
-		std::string baseMlcPath = GetMlcStoragePath(titleId);
+		std::string baseMetaPath = GetMlcStoragePath(titleId) + "/meta";
 		bool alreadyPatched = std::any_of(m_mlcPatchMounts.begin(), m_mlcPatchMounts.end(),
-			[&baseMlcPath](const auto& p) { return p.second == baseMlcPath; });
+			[&baseMetaPath](const auto& p) { return p.second == baseMetaPath; });
 		if (alreadyPatched)
 			return;
 		MlcStorageMountTitle(updateInfo); // ensure update is mounted at its own path too
 		TitleInfo* patchMount = new TitleInfo(updateInfo);
-		if (patchMount->Mount(baseMlcPath, "", FSC_PRIORITY_PATCH))
-			m_mlcPatchMounts.emplace_back(patchMount, baseMlcPath);
+		if (patchMount->Mount(baseMetaPath, "meta", FSC_PRIORITY_PATCH))
+			m_mlcPatchMounts.emplace_back(patchMount, baseMetaPath);
 		else
 			delete patchMount;
 	}

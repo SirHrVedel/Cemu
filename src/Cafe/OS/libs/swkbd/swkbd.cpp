@@ -951,10 +951,12 @@ void swkbd_render(bool mainWindow)
 		// Faithful extraction of the per-key logic so all layouts behave identically.
 		auto drawKey = [&](const char* key, float btnW, int rowIdx, int colIdx)
 		{
-			const bool isIconKey  = (*key & 0x80) != 0; // FontAwesome uses high-byte codepoints
-			const bool isOkKey    = strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0;
+			const bool isIconKey      = (*key & 0x80) != 0; // FontAwesome uses high-byte codepoints
+			const bool isOkKey        = strcmp(key, _utf8WrapperPtr(ICON_FA_CHECK)) == 0;
+			const bool isBackspaceKey = strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0;
 			const bool isDisabled = (!isIconKey && !swkbd_isCharAllowed((uint8)*key))
-			                     || (isOkKey && !swkbd_isOkButtonEnabled());
+			                     || (isOkKey        && !swkbd_isOkButtonEnabled())
+			                     || (isBackspaceKey && swkbdInternalState->formStringLength == 0);
 			const bool navSel = !isDisabled && (rowIdx == swkbdInternalState->navRow && colIdx == swkbdInternalState->navCol);
 			int stylePushCount = 0;
 			if (isDisabled)

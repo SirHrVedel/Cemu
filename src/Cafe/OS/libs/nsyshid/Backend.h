@@ -136,6 +136,16 @@ namespace nsyshid
 							 uint8 reportId,
 							 uint8 duration) = 0;
 
+		// Returns the current idle rate for a report (USB HID GET_IDLE). Defaults to 0
+		// ("idle disabled" / report-on-change), which matches devices that don't track idle state.
+		virtual bool GetIdle(uint8 ifIndex,
+							 uint8 reportId,
+							 uint8& duration)
+		{
+			duration = 0;
+			return true;
+		}
+
 		virtual bool SetProtocol(uint8 ifIndex, uint8 protocol) = 0;
 
 		virtual bool SetReport(ReportMessage* message) = 0;

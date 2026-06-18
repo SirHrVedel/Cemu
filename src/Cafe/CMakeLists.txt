@@ -427,6 +427,8 @@ add_library(CemuCafe
   OS/libs/nsyshid/BackendEmulated.h
   OS/libs/nsyshid/Dimensions.cpp
   OS/libs/nsyshid/Dimensions.h
+  OS/libs/nsyshid/EmulatedKeyboard.cpp
+  OS/libs/nsyshid/EmulatedKeyboard.h
   OS/libs/nsyshid/Infinity.cpp
   OS/libs/nsyshid/Infinity.h
   OS/libs/nsyshid/Skylander.cpp

@@ -305,6 +305,49 @@ namespace nsyshid
 		osLib_returnFromFunction(hCPU, 0);
 	}
 
+	// A passive client observes devices without claiming them exclusively. On real hardware
+	// passive clients live on a separate list with a lower arbitration priority than active
+	// clients, but the attach/detach callback contract is identical and input still flows via
+	// HIDRead polling (verified by disassembling the real nsyshid.rpl). Since Cemu exposes each
+	// emulated device to a single consumer, the passive/active distinction is irrelevant here and
+	// we treat a passive client exactly like a regular one. nsyskbd uses this to listen for USB
+	// keyboards.
+	void export_HIDAddPassiveClient(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamTypePtr(hidClient, HIDClient_t, 0);
+		ppcDefineParamMPTR(callbackFuncMPTR, 1);
+		cemuLog_log(LogType::Force, "nsyshid.HIDAddPassiveClient(0x{:08x},0x{:08x})", hCPU->gpr[3], hCPU->gpr[4]);
+		hidClient->callbackFunc = callbackFuncMPTR;
+
+		std::lock_guard<std::recursive_mutex> lock(hidMutex);
+		AttachClientToList(hidClient);
+
+		// do attach callbacks
+		for (const auto& device : deviceList)
+		{
+			DoAttachCallback(hidClient, device);
+		}
+
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
+	void export_HIDDelPassiveClient(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamTypePtr(hidClient, HIDClient_t, 0);
+		cemuLog_logDebug(LogType::Force, "nsyshid.HIDDelPassiveClient(0x{:08x})", hCPU->gpr[3]);
+
+		std::lock_guard<std::recursive_mutex> lock(hidMutex);
+		DetachClientFromList(hidClient);
+
+		// do detach callbacks
+		for (const auto& device : deviceList)
+		{
+			DoDetachCallback(hidClient, device);
+		}
+
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
 	void _debugPrintHex(const std::string prefix, const uint8* data, size_t size)
 	{
 		constexpr size_t BYTES_PER_LINE = 16;
@@ -464,6 +507,67 @@ namespace nsyshid
 		{
 			// asynchronous
 			std::thread(&_hidSetIdleAsync, device, ifIndex, reportId, duration, callbackFuncMPTR, callbackParamMPTR)
+				.detach();
+			returnCode = 0;
+		}
+		osLib_returnFromFunction(hCPU, returnCode);
+	}
+
+	void _hidGetIdleAsync(std::shared_ptr<Device> device, uint8 ifIndex, uint8 reportId, uint8* output,
+						  MPTR callbackFuncMPTR, MPTR callbackParamMPTR)
+	{
+		uint8 duration = 0;
+		bool ok = device->GetIdle(ifIndex, reportId, duration);
+		if (ok && output)
+			*output = duration;
+		DoHIDTransferCallback(callbackFuncMPTR,
+							  callbackParamMPTR,
+							  device->m_hid->handle,
+							  ok ? 0 : -1,
+							  output ? memory_getVirtualOffsetFromPointer(output) : 0,
+							  ok ? 1 : 0);
+	}
+
+	void export_HIDGetIdle(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamU32(hidHandle, 0);		  // r3
+		ppcDefineParamU8(ifIndex, 1);			  // r4
+		ppcDefineParamU8(reportId, 2);			  // r5
+		ppcDefineParamUStr(output, 3);			  // r6
+		ppcDefineParamMPTR(callbackFuncMPTR, 4);  // r7
+		ppcDefineParamMPTR(callbackParamMPTR, 5); // r8
+		cemuLog_logDebug(LogType::Force, "nsyshid.HIDGetIdle(0x{:08x}, 0x{:02x}, 0x{:02x}, 0x{:08x}, 0x{:08x}, 0x{:08x})", hCPU->gpr[3],
+					hCPU->gpr[4], hCPU->gpr[5], hCPU->gpr[6], hCPU->gpr[7], hCPU->gpr[8]);
+
+		std::shared_ptr<Device> device = GetDeviceByHandle(hidHandle, true);
+		if (device == nullptr)
+		{
+			cemuLog_log(LogType::Force, "nsyshid.HIDGetIdle(): Unable to find device with hid handle {}", hidHandle);
+			osLib_returnFromFunction(hCPU, -1);
+			return;
+		}
+
+		// issue request (synchronous or asynchronous)
+		sint32 returnCode = 0;
+		if (callbackFuncMPTR == MPTR_NULL)
+		{
+			// synchronous
+			uint8 duration = 0;
+			if (device->GetIdle(ifIndex, reportId, duration))
+			{
+				if (output)
+					output[0] = duration;
+				returnCode = 1; // one byte returned
+			}
+			else
+			{
+				returnCode = -1;
+			}
+		}
+		else
+		{
+			// asynchronous
+			std::thread(&_hidGetIdleAsync, device, ifIndex, reportId, output, callbackFuncMPTR, callbackParamMPTR)
 				.detach();
 			returnCode = 0;
 		}
@@ -956,8 +1060,11 @@ namespace nsyshid
 		{
 			osLib_addFunction("nsyshid", "HIDAddClient", export_HIDAddClient);
 			osLib_addFunction("nsyshid", "HIDDelClient", export_HIDDelClient);
+			osLib_addFunction("nsyshid", "HIDAddPassiveClient", export_HIDAddPassiveClient);
+			osLib_addFunction("nsyshid", "HIDDelPassiveClient", export_HIDDelPassiveClient);
 			osLib_addFunction("nsyshid", "HIDGetDescriptor", export_HIDGetDescriptor);
 			osLib_addFunction("nsyshid", "HIDSetIdle", export_HIDSetIdle);
+			osLib_addFunction("nsyshid", "HIDGetIdle", export_HIDGetIdle);
 			osLib_addFunction("nsyshid", "HIDSetProtocol", export_HIDSetProtocol);
 			osLib_addFunction("nsyshid", "HIDSetReport", export_HIDSetReport);
 

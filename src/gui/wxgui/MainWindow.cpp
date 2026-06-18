@@ -21,6 +21,7 @@
 #endif
 #include "Cafe/OS/libs/nfc/nfc.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#include "wxgui/helpers/EmulatedKeyboardInput.h"
 #include "wxgui/debugger/DebuggerWindow2.h"
 #include "util/helpers/helpers.h"
 #include "config/CemuConfig.h"
@@ -1637,6 +1638,8 @@ void MainWindow::OnKeyUp(wxKeyEvent& event)
 {
 	event.Skip();
 
+	FeedEmulatedKeyboard(event, false);
+
 	if (swkbd_hasKeyboardInputHook())
 		return;
 
@@ -1645,6 +1648,7 @@ void MainWindow::OnKeyUp(wxKeyEvent& event)
 
 void MainWindow::OnKeyDown(wxKeyEvent& event)
 {
+	FeedEmulatedKeyboard(event, true);
 #if defined(__APPLE__)
        // On macOS, allow Cmd+Q to quit the application
     if (event.CmdDown() && event.GetKeyCode() == 'Q')
@@ -1666,7 +1670,9 @@ void MainWindow::OnKeyDown(wxKeyEvent& event)
 
 void MainWindow::OnChar(wxKeyEvent& event)
 {
-	if (swkbd_hasKeyboardInputHook())
+	const bool hookActive = swkbd_hasKeyboardInputHook();
+	cemuLog_log(LogType::Force, "[swkbd] MainWindow::OnChar keyCode=0x{:X} hookActive={}", (uint32)event.GetUnicodeKey(), hookActive);
+	if (hookActive)
 		swkbd_keyInput(event.GetUnicodeKey());
 
 	// event.Skip();

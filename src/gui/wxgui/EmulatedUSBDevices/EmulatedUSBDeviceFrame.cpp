@@ -47,6 +47,7 @@ EmulatedUSBDeviceFrame::EmulatedUSBDeviceFrame(wxWindow* parent)
 	notebook->AddPage(AddSkylanderPage(notebook), _("Skylanders Portal"));
 	notebook->AddPage(AddInfinityPage(notebook), _("Infinity Base"));
 	notebook->AddPage(AddDimensionsPage(notebook), _("Dimensions Toypad"));
+	notebook->AddPage(AddKeyboardPage(notebook), _("Keyboard"));
 
 	sizer->Add(notebook, 1, wxEXPAND | wxALL, 2);
 
@@ -162,6 +163,40 @@ wxPanel* EmulatedUSBDeviceFrame::AddDimensionsPage(wxNotebook* notebook)
 	box_sizer->Add(bottom_row, 1, wxEXPAND | wxALL, 2);
 	panel_sizer->Add(box_sizer, 1, wxEXPAND | wxALL, 2);
 	panel->SetSizerAndFit(panel_sizer);
+
+	return panel;
+}
+
+wxPanel* EmulatedUSBDeviceFrame::AddKeyboardPage(wxNotebook* notebook)
+{
+	auto* panel = new wxPanel(notebook);
+	auto* panelSizer = new wxBoxSizer(wxVERTICAL);
+	auto* box = new wxStaticBox(panel, wxID_ANY, _("USB Keyboard"));
+	auto* boxSizer = new wxStaticBoxSizer(box, wxVERTICAL);
+
+	auto* row = new wxBoxSizer(wxHORIZONTAL);
+	m_emulateKeyboard =
+		new wxCheckBox(box, wxID_ANY, _("Emulate USB Keyboard"));
+	m_emulateKeyboard->SetValue(
+		GetConfig().emulated_usb_devices.emulate_usb_keyboard);
+	m_emulateKeyboard->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) {
+		GetConfig().emulated_usb_devices.emulate_usb_keyboard =
+			m_emulateKeyboard->IsChecked();
+		GetConfigHandle().Save();
+	});
+	row->Add(m_emulateKeyboard, 1, wxEXPAND | wxALL, 2);
+	boxSizer->Add(row, 0, wxEXPAND | wxALL, 2);
+
+	auto* hint = new wxStaticText(
+		box, wxID_ANY,
+		_("Presents a virtual USB keyboard to the emulated console so titles that use the\n"
+		  "native keyboard (e.g. the system software keyboard) accept input from your\n"
+		  "physical keyboard. Takes effect the next time the title opens a keyboard.\n"
+		  "Restart the title after enabling."));
+	boxSizer->Add(hint, 0, wxEXPAND | wxALL, 4);
+
+	panelSizer->Add(boxSizer, 1, wxEXPAND | wxALL, 2);
+	panel->SetSizerAndFit(panelSizer);
 
 	return panel;
 }

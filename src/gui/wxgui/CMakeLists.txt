@@ -63,6 +63,8 @@ add_library(CemuWxGui STATIC
   wxWindowSystem.cpp
   helpers/wxControlObject.h
   helpers/wxCustomData.h
+  helpers/EmulatedKeyboardInput.cpp
+  helpers/EmulatedKeyboardInput.h
   helpers/wxCustomEvents.cpp
   helpers/wxCustomEvents.h
   helpers/wxHelpers.cpp

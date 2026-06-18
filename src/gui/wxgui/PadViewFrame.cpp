@@ -6,6 +6,7 @@
 
 #include "config/ActiveSettings.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#include "wxgui/helpers/EmulatedKeyboardInput.h"
 #ifdef ENABLE_OPENGL
 #include "wxgui/canvas/OpenGLCanvas.h"
 #endif
@@ -97,6 +98,7 @@ void PadViewFrame::InitializeRenderCanvas()
 	SetSizer(sizer);
 	Layout();
 
+	m_render_canvas->Bind(wxEVT_KEY_DOWN, &PadViewFrame::OnKeyDown, this);
 	m_render_canvas->Bind(wxEVT_KEY_UP, &PadViewFrame::OnKeyUp, this);
 	m_render_canvas->Bind(wxEVT_CHAR, &PadViewFrame::OnChar, this);
 
@@ -159,9 +161,17 @@ void PadViewFrame::OnMoveEvent(wxMoveEvent& event)
 	}
 }
 
+void PadViewFrame::OnKeyDown(wxKeyEvent& event)
+{
+	FeedEmulatedKeyboard(event, true);
+	event.Skip();
+}
+
 void PadViewFrame::OnKeyUp(wxKeyEvent& event)
 {
 	event.Skip();
+
+	FeedEmulatedKeyboard(event, false);
 
 	if (swkbd_hasKeyboardInputHook())
 		return;

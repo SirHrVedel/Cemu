@@ -1,6 +1,7 @@
 #include "BackendEmulated.h"
 
 #include "Dimensions.h"
+#include "EmulatedKeyboard.h"
 #include "Infinity.h"
 #include "Skylander.h"
 #include "config/CemuConfig.h"
@@ -50,6 +51,13 @@ namespace nsyshid::backend::emulated
 			cemuLog_logDebug(LogType::Force, "Attaching Emulated Toypad");
 			// Add Dimensions Toypad
 			auto device = std::make_shared<DimensionsToypadDevice>();
+			AttachDevice(device);
+		}
+		if (GetConfig().emulated_usb_devices.emulate_usb_keyboard && !FindDeviceById(EMULATED_KEYBOARD_VENDOR_ID, EMULATED_KEYBOARD_PRODUCT_ID))
+		{
+			cemuLog_log(LogType::Force, "Attaching Emulated USB Keyboard");
+			// Add emulated HID keyboard
+			auto device = CreateEmulatedKeyboard();
 			AttachDevice(device);
 		}
 	}

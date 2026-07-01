@@ -1,80 +1,70 @@
-#include "Cafe/HW/Latte/Renderer/Renderer.h"
-#include "interface/WindowSystem.h"
-#include "wxCemuConfig.h"
-#include "wxgui/wxgui.h"
-#include "wxgui/MainWindow.h"
-#include "wxgui/GameUpdateWindow.h"
-#include "wxgui/PadViewFrame.h"
-#include "wxgui/windows/TextureRelationViewer/TextureRelationWindow.h"
-#include "wxgui/windows/PPCThreadsViewer/DebugPPCThreadsWindow.h"
+#include "MainWindow.h"
+
+// subwindows
+#include "TitleManager.h"
+#include "GeneralSettings2.h"
+#include "GameUpdateWindow.h"
+#include "CemuUpdateWindow.h"
+#include "GraphicPacksWindow2.h"
 #include "AudioDebuggerWindow.h"
-#ifdef ENABLE_OPENGL
-#include "wxgui/canvas/OpenGLCanvas.h"
-#endif
-#ifdef ENABLE_VULKAN
-#include "wxgui/canvas/VulkanCanvas.h"
-#include "Cafe/HW/Latte/Renderer/Vulkan/VsyncDriver.h"
-#endif
-#ifdef ENABLE_METAL
-#include "wxgui/canvas/MetalCanvas.h"
-#include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
-#endif
-#include "Cafe/OS/libs/nfc/nfc.h"
-#include "Cafe/OS/libs/swkbd/swkbd.h"
-#include "wxgui/debugger/DebuggerWindow2.h"
-#include "util/helpers/helpers.h"
-#include "config/CemuConfig.h"
-#include "Cemu/DiscordPresence/DiscordPresence.h"
-#include "util/ScreenSaver/ScreenSaver.h"
-#include "wxgui/GeneralSettings2.h"
-#include "wxgui/GraphicPacksWindow2.h"
-#include "wxgui/CemuApp.h"
-#include "wxgui/CemuUpdateWindow.h"
-#include "wxgui/LoggingWindow.h"
-#include "config/ActiveSettings.h"
-#include "Cafe/Account/Account.h"
-#include "wxgui/dialogs/PasswordPrompt/wxPasswordPromptDialog.h"
-#include "config/LaunchSettings.h"
+#include "input/InputSettings2.h"
+#include "input/HotkeySettings.h"
+#include "debugger/DebuggerWindow2.h"
+#include "EmulatedUSBDevices/EmulatedUSBDeviceFrame.h"
+#include "windows/PPCThreadsViewer/DebugPPCThreadsWindow.h"
+#include "windows/TextureRelationViewer/TextureRelationWindow.h"
+#include "dialogs/PasswordPrompt/wxPasswordPromptDialog.h"
 
-#include "Cafe/Filesystem/FST/FST.h"
-
-#include "wxgui/TitleManager.h"
-#include "wxgui/EmulatedUSBDevices/EmulatedUSBDeviceFrame.h"
-
-#include "Cafe/CafeSystem.h"
-
-#include "util/helpers/SystemException.h"
-#include "wxgui/DownloadGraphicPacksWindow.h"
-#include "wxgui/GettingStartedDialog.h"
-#include "wxgui/helpers/wxHelpers.h"
-#include "wxgui/input/InputSettings2.h"
+//wxgui + misc.
+#include "wxgui.h"
+#include "wxCemuConfig.h"
+#include "interface/WindowSystem.h"
+#include "wxHelper.h"
+#include "helpers/wxHelpers.h"
+#include "PadViewFrame.h"
 #include <wx/popupwin.h>
-#include <wx/statbmp.h>
-#include "wxgui/input/HotkeySettings.h"
-#include "input/InputManager.h"
 
-#if BOOST_OS_WINDOWS
-#define exit(__c) ExitProcess(__c)
-#else
-#define exit(__c) _Exit(__c)
-#endif
 
 #if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
 #include "resource/embedded/resources.h"
 #endif
 
-#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) && HAS_WAYLAND
-#include "wxgui/helpers/wxWayland.h"
-#endif
+// settings
+#include "config/CemuConfig.h"
+#include "config/LaunchSettings.h"
+#include "config/ActiveSettings.h"
 
-//GameMode support
-#if BOOST_OS_LINUX && defined(ENABLE_FERAL_GAMEMODE)
-#include "gamemode_client.h"
-#endif
-
-#include "Cafe/TitleList/TitleInfo.h"
+// External functionality headers
+#include "input/InputManager.h"
 #include "Cafe/TitleList/TitleList.h"
-#include "wxHelper.h"
+#include "Cemu/DiscordPresence/DiscordPresence.h"
+#include "util/ScreenSaver/ScreenSaver.h"
+#include "util/helpers/SystemException.h"
+#include "Cafe/HW/Latte/Renderer/Vulkan/VsyncDriver.h"
+#if BOOST_OS_LINUX && defined(ENABLE_FERAL_GAMEMODE)
+#include <gamemode_client.h>
+#endif
+#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) && HAS_WAYLAND
+#include "helpers/wxWayland.h"
+#endif
+
+// Renderer Canvasses
+#ifdef ENABLE_OPENGL
+#include "canvas/OpenGLCanvas.h"
+#endif
+#ifdef ENABLE_VULKAN
+#include "canvas/VulkanCanvas.h"
+#endif
+#ifdef ENABLE_METAL
+#include "canvas/MetalCanvas.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+#endif
+
+//Cafe libs
+#include "Cafe/OS/libs/nfc/nfc.h"
+#include "Cafe/OS/libs/swkbd/swkbd.h"
+
+#include "Cafe/HW/Latte/Renderer/Renderer.h" // For renderer API checks
 
 extern WindowSystem::WindowInfo g_window_info;
 extern std::shared_mutex g_mutex;
@@ -175,6 +165,7 @@ wxDEFINE_EVENT(wxEVT_SET_WINDOW_TITLE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_GAMELIST_REFRESH, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_LAUNCH_GAME, wxLaunchGameEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_RECREATE_CANVAS, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_REQUEST_GAME_EXIT, wxCommandEvent);
 
 wxBEGIN_EVENT_TABLE(MainWindow, wxFrame)
 EVT_TIMER(MAINFRAME_ID_TIMER1, MainWindow::OnTimer)
@@ -256,6 +247,7 @@ EVT_COMMAND(wxID_ANY, wxEVT_ACCOUNTLIST_REFRESH, MainWindow::OnAccountListRefres
 EVT_COMMAND(wxID_ANY, wxEVT_SET_WINDOW_TITLE, MainWindow::OnSetWindowTitle)
 
 EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_RECREATE_CANVAS, MainWindow::OnRequestRecreateCanvas)
+EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_GAME_EXIT, MainWindow::OnRequestGameExit)
 
 wxEND_EVENT_TABLE()
 
@@ -516,17 +508,9 @@ bool MainWindow::InstallUpdate(const fs::path& metaFilePath)
 bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATED_BY initiatedBy)
 {
 	// Reset the per-launch session overrides so the GUI account selection /
-	// online setting wins again on a fresh launch. The IOSU LoadConsoleAccount
-	// handler may re-set the persistent-id override later if the system menu
-	// switches accounts; the password-prompt cancel path may set the
-	// force-offline override.
+	// online setting wins again on a fresh launch.
 	ActiveSettings::SetForceOfflineForCurrentLaunch(false);
 	ActiveSettings::SetSessionPersistentIdOverride(0);
-	// Drop any session-only passwords carried over from a previous launch in
-	// this Cemu run. Without this, entering the password once (without ticking
-	// "Save password") would keep HasUsablePasswordForLaunch() returning true
-	// for the rest of the session and the prompt would never reappear. The
-	// on-disk cache (saved passwords) is left alone.
 	Account::ClearAllSessionPasswords();
 
 	TitleInfo launchTitle{ launchPath };
@@ -543,25 +527,11 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 			return false;
 		}
 		// If the active account is an online account whose password isn't
-		// cached on disk, prompt the user for it before booting. The hashed
-		// result lives in the in-memory Account for the rest of this session,
-		// and optionally gets written back to account.dat when the user ticks
-		// "Save password". Skip when online mode is disabled or there's no
-		// principal id (offline-only account).
-		//
-		// Each typed password is verified against the stored AccountPasswordHash
-		// (double makePWHash, principal-id-keyed) before we accept it. Mismatches
-		// re-prompt; Cancel aborts the launch. Accounts without a stored hash
-		// (brand-new online accounts) pass verification trivially.
+		// cached on disk, prompt the user for it before booting. 
 		if (ActiveSettings::IsOnlineEnabled())
 		{
 			const Account& activeAccount = Account::GetCurrentAccount();
-			// Prompt only when we don't already have a usable password. The
-			// on-disk IsPasswordCacheEnabled stays the authoritative answer
-			// for nn::act callers (the system menu reads it to decide whether
-			// to show its own password screen) - here we additionally accept
-			// a session-only password supplied earlier this Cemu run, so the
-			// user isn't asked again every title launch within a session.
+			// Prompt only when we don't already have a usable password.
 			if (activeAccount.GetPrincipalId() != 0 && !activeAccount.HasUsablePasswordForLaunch())
 			{
 				const wxString miiName = wxString::Format(
@@ -655,8 +625,7 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
 			return false;
 		}
-		else if (initiatedBy == wxLaunchGameEvent::INITIATED_BY::MENU ||
-			initiatedBy == wxLaunchGameEvent::INITIATED_BY::COMMAND_LINE)
+		else
 		{
 			wxString t = _("Unable to launch game\nPath:\n");
 			t.append(_pathToUtf8(launchPath));
@@ -670,13 +639,6 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 				t.append("\n\n");
 				t.append(_("Could not decrypt title because title.tik is missing."));
 			}
-			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
-			return false;
-		}
-		else
-		{
-			wxString t = _("Unable to launch game\nPath:\n");
-			t.append(_pathToUtf8(launchPath));
 			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
 			return false;
 		}
@@ -2654,6 +2616,27 @@ void MainWindow::CafeRecreateCanvas()
 	evt->SetClientData((void*)&sem);
 	wxQueueEvent(g_mainFrame, evt);
 	sem.decrementWithWait();
+}
+
+void MainWindow::CafePPCProcessExit()
+{
+	// this is called from the emulated PPC thread, so queue an event instead of handling it directly
+	wxQueueEvent(g_mainFrame, new wxCommandEvent(wxEVT_REQUEST_GAME_EXIT));
+}
+
+void MainWindow::OnRequestGameExit(wxCommandEvent& event)
+{
+	// if the title was launched via the command line we close Cemu and use the foreground title's exit status as Cemu's process return code (via CemuApp:OnExit)
+	// this is useful for homebrew testing setups that use Cemu via CLI
+	// otherwise the title was launched from the game list, so we just stop it and return to the game list instead of closing Cemu
+	if (LaunchSettings::GetLoadFile() || LaunchSettings::GetLoadTitleID())
+	{
+		Close();
+	}
+	else
+	{
+		EndEmulation();
+	}
 }
 
 bool MainWindow::FullscreenEnabled() const

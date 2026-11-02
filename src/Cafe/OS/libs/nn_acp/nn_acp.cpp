@@ -2,6 +2,7 @@
 #include "Cafe/Filesystem/fsc.h"
 #include "nn_acp.h"
 #include "Cafe/OS/libs/nn_common.h"
+#include "Cafe/OS/libs/nn_client_service.h"
 #include "Cafe/OS/libs/coreinit/coreinit_IOS.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 
@@ -32,6 +33,11 @@ namespace nn
 {
 namespace acp
 {
+	constinit COSStaticData s_rplData;
+	CafeStaticVar<uint8, 0x1000, 64> s_ipcBuffer{s_rplData};
+	IPCServiceClient s_ipcClient;
+	bool s_ipcClientInitialized = false;
+
 	ACPStatus ACPConvertResultToACPStatus(uint32* nnResult, const char* functionName, uint32 lineNumber)
 	{
 		// todo
@@ -51,6 +57,40 @@ namespace acp
 	{
 		nnResult r = iosu::acp::ACPGetOlvAccesskey(accessKey);
 		return _ACPConvertResultToACPStatus(&r);
+	}
+
+	void InitializeIPCClient()
+	{
+		if (s_ipcClientInitialized)
+			return;
+		s_ipcClient.Initialize("/dev/acp_main", s_ipcBuffer.GetPtr(), s_ipcBuffer.GetByteSize());
+		s_ipcClientInitialized = true;
+	}
+
+	ACPStatus ACPGetConsoleStatusCode(char* statusCode, uint32 bufferSize)
+	{
+		if (!statusCode || bufferSize < 0x10)
+			return (ACPStatus)0xC0306480;
+		InitializeIPCClient();
+		IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, iosu::acp::ACP_COMMAND_GET_CONSOLE_STATUS_CODE);
+		serviceCall.WriteResponseBuffer(statusCode, bufferSize);
+		nnResult r = serviceCall.Submit();
+		if (NN_RESULT_IS_FAILURE(r))
+			return (ACPStatus)(uint32)r;
+		return ACPStatus::SUCCESS;
+	}
+
+	ACPStatus ACPGetSystemInformation(iosu::acp::ACPSystemInformation* systemInfo)
+	{
+		if (!systemInfo)
+			return (ACPStatus)0xC0306480;
+		InitializeIPCClient();
+		IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, iosu::acp::ACP_COMMAND_GET_SYSTEM_INFORMATION);
+		serviceCall.WriteResponseBuffer(systemInfo, sizeof(iosu::acp::ACPSystemInformation));
+		nnResult r = serviceCall.Submit();
+		if (NN_RESULT_IS_FAILURE(r))
+			return (ACPStatus)(uint32)r;
+		return ACPStatus::SUCCESS;
 	}
 
     bool sSaveDirMounted{false};
@@ -343,8 +383,16 @@ namespace acp
 			return "nn_acp";
 		}
 
+		void RPLUnmapped() override
+		{
+			s_ipcClient.Shutdown();
+			s_ipcClientInitialized = false;
+			s_rplData.Deallocate();
+		}
+
 		void RPLMapped() override
 		{
+			s_rplData.Allocate();
 			cafeExportRegister("nn_acp", ACPCheckApplicationDeviceEmulation, LogType::Placeholder);
 
 			osLib_addFunction("nn_acp", "ACPCreateSaveDirEx", nnACPExport_ACPCreateSaveDirEx);
@@ -366,6 +414,9 @@ namespace acp
 			cafeExportRegister("nn_acp", ACPGetApplicationBox, LogType::Placeholder);
 
 			cafeExportRegister("nn_acp", ACPGetOlvAccesskey, LogType::Placeholder);
+
+			cafeExportRegister("nn_acp", ACPGetSystemInformation, LogType::Placeholder);
+			cafeExportRegister("nn_acp", ACPGetConsoleStatusCode, LogType::Placeholder);
 
 			osLib_addFunction("nn_acp", "ACPIsOverAgeEx", export_ACPIsOverAgeEx);
 

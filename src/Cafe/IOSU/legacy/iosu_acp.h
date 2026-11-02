@@ -205,6 +205,21 @@ namespace iosu
 			USBDeviceType = 3,
 		};
 
+		// output of /dev/acp_main command 0xD6 (ACPGetSystemInformation)
+		struct ACPSystemInformation
+		{
+			uint32be versionMajor;
+			uint32be versionMinor;
+			uint32be versionHotfix;
+			char codeId[8];
+			char serialId[12];
+			char modelNumber[16];
+		};
+		static_assert(sizeof(ACPSystemInformation) == 0x30);
+
+		constexpr uint32 ACP_COMMAND_GET_SYSTEM_INFORMATION = 0xD6;
+		constexpr uint32 ACP_COMMAND_GET_CONSOLE_STATUS_CODE = 0xD7;
+
 		class IOSUModule* GetModule();
 
 		void CreateSaveMetaFiles(uint32 persistentId, uint64 titleId);

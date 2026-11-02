@@ -16,8 +16,12 @@
 #include "Cafe/IOSU/legacy/iosu_act.h"
 #include "Cafe/CafeSystem.h"
 #include "config/ActiveSettings.h"
+#include "Cemu/ncrypto/ncrypto.h"
 
 #include <inttypes.h>
+#include <fstream>
+
+void iosuCrypto_readSeepromData(void* output, sint32 wordIndex, sint32 size);
 
 using ACPDeviceType = iosu::acp::ACPDeviceType;
 
@@ -784,8 +788,76 @@ namespace iosu
 		  public:
 			AcpMainService() : iosu::nn::IPCService("/dev/acp_main", s_ipcServiceWorkArea) {}
 
+			static void SetPlaceholder(char* dst, size_t size)
+			{
+				memset(dst, 0, size);
+				memcpy(dst, "N/A", 3);
+			}
+
+			// copy a fixed size, possibly non-terminated seeprom string. Falls back to N/A if empty
+			static void CopySeepromString(char* dst, size_t dstSize, const char* src, size_t srcSize)
+			{
+				size_t len = strnlen(src, srcSize);
+				if (len == 0)
+				{
+					SetPlaceholder(dst, dstSize);
+					return;
+				}
+				memset(dst, 0, dstSize);
+				memcpy(dst, src, std::min(len, dstSize));
+			}
+
+			nnResult HandleGetSystemInformation(IPCServiceCall& serviceCall)
+			{
+				IPCServiceCall::UnalignedBuffer outputBuffer = serviceCall.ReadUnalignedOutputBufferInfo();
+				cemu_assert(outputBuffer.GetSize() >= sizeof(ACPSystemInformation));
+				ACPSystemInformation info{};
+				// version triple is read from the OS title's version.bin ("VER\0" followed by three big-endian u32)
+				std::ifstream versionFile(ActiveSettings::GetMlcPath("sys/title/00050010/10041200/content/version.bin"), std::ios::binary);
+				uint8 versionBin[0x10];
+				if (versionFile.read((char*)versionBin, sizeof(versionBin)) && memcmp(versionBin, "VER\0", 4) == 0)
+					memcpy(&info.versionMajor, versionBin + 4, 12);
+				// code id, serial and model number are read from the seeprom, but only if online mode is enabled
+				if (ActiveSettings::IsOnlineEnabled() && NCrypto::SEEPROM_IsPresent())
+				{
+					char codeId[8];
+					char serial[16];
+					char model[16];
+					iosuCrypto_readSeepromData(codeId, 0xAC, sizeof(codeId));
+					iosuCrypto_readSeepromData(serial, 0xB0, sizeof(serial));
+					iosuCrypto_readSeepromData(model, 0xB8, sizeof(model));
+					CopySeepromString(info.codeId, sizeof(info.codeId), codeId, sizeof(codeId));
+					// serial_id holds only the serial digits. Callers (e.g. erreula) prepend code_id themselves
+					CopySeepromString(info.serialId, sizeof(info.serialId), serial, sizeof(serial));
+					CopySeepromString(info.modelNumber, sizeof(info.modelNumber), model, sizeof(model));
+				}
+				else
+				{
+					SetPlaceholder(info.codeId, sizeof(info.codeId));
+					SetPlaceholder(info.serialId, sizeof(info.serialId));
+					SetPlaceholder(info.modelNumber, sizeof(info.modelNumber));
+				}
+				outputBuffer.WriteData(&info, sizeof(info));
+				return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_ACP, 0);
+			}
+
+			nnResult HandleGetConsoleStatusCode(IPCServiceCall& serviceCall)
+			{
+				// real hardware writes a 0x10 byte "XXXX-XXXX-XXXX" code that summarizes console settings (TV, network, storage state). We don't emulate it
+				IPCServiceCall::UnalignedBuffer outputBuffer = serviceCall.ReadUnalignedOutputBufferInfo();
+				cemu_assert(outputBuffer.GetSize() >= 0x10);
+				char statusCode[0x10];
+				SetPlaceholder(statusCode, sizeof(statusCode));
+				outputBuffer.WriteData(statusCode, sizeof(statusCode));
+				return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_ACP, 0);
+			}
+
 			nnResult ServiceCall(IPCServiceCall& serviceCall) override
 			{
+				if (serviceCall.GetCommandId() == ACP_COMMAND_GET_SYSTEM_INFORMATION)
+					return HandleGetSystemInformation(serviceCall);
+				if (serviceCall.GetCommandId() == ACP_COMMAND_GET_CONSOLE_STATUS_CODE)
+					return HandleGetConsoleStatusCode(serviceCall);
 				cemuLog_log(LogType::Force, "Unsupported service call to /dev/acp_main");
 				cemu_assert_unimplemented();
 				return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_ACP, 0);

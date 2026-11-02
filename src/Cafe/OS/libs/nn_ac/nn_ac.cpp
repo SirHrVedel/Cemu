@@ -201,20 +201,31 @@ namespace nn_ac
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
+	// the application connection is considered up by default (some titles never call Connect). Close() drops it until the next Connect()
+	static std::atomic_bool s_applicationConnected{true};
+
 	nnResult ConnectAsync()
 	{
+		s_applicationConnected = true;
+		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	}
+
+	nnResult Close()
+	{
+		s_applicationConnected = false;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
 	nnResult IsApplicationConnected(uint8be* connected)
 	{
 		if (connected)
-			*connected = TRUE;
+			*connected = s_applicationConnected ? TRUE : FALSE;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
 	uint32 Connect()
 	{
+		s_applicationConnected = true;
 		// Terraria expects this (or GetLastErrorCode) to return 0 on success
 		// investigate on the actual console
 		// maybe all success codes are always 0 and dont have any of the other fields set?
@@ -225,7 +236,7 @@ namespace nn_ac
 	nnResult GetConnectStatus(betype<AC_STATUS>* status)
 	{
 		if (status)
-			*status = AC_STATUS::OK;
+			*status = s_applicationConnected ? AC_STATUS::OK : AC_STATUS::FAILED;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
@@ -296,6 +307,7 @@ namespace nn_ac
 
 		cafeExportRegisterFunc(Connect, "nn_ac", "Connect__Q2_2nn2acFv", LogType::Placeholder);
 		cafeExportRegisterFunc(ConnectAsync, "nn_ac", "ConnectAsync__Q2_2nn2acFv", LogType::Placeholder);
+		cafeExportRegisterFunc(Close, "nn_ac", "Close__Q2_2nn2acFv", LogType::Placeholder);
 
 		cafeExportRegisterFunc(GetConnectResult, "nn_ac", "GetConnectResult__Q2_2nn2acFPQ2_2nn6Result", LogType::Placeholder);
 		cafeExportRegisterFunc(GetLastErrorCode, "nn_ac", "GetLastErrorCode__Q2_2nn2acFPUi", LogType::Placeholder);

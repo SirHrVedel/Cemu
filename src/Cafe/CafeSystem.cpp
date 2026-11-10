@@ -497,7 +497,8 @@ namespace CafeSystem
 	}
 
 	#if BOOST_OS_WINDOWS
-	std::string GetWindowsNamedVersion(uint32& buildNumber)
+	// buildString receives "<build>.<UBR>" if the UBR value exists (Windows 10+), otherwise just "<build>"
+	std::string GetWindowsNamedVersion(uint32& buildNumber, std::string& buildString)
 	{
 		char productName[256];
 		char buildNumberStr[32];
@@ -506,6 +507,8 @@ namespace CafeSystem
 		DWORD dwType = REG_SZ;
 		DWORD dwSize = sizeof(productName);
 		buildNumber = 0;
+		bool hasUBR = false;
+		DWORD ubr = 0;
 		featureVersion[0] = '\0';
 		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS)
 		{
@@ -515,6 +518,10 @@ namespace CafeSystem
 			dwSize = sizeof(buildNumberStr);
 			if (RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, &dwType, (LPBYTE)buildNumberStr, &dwSize) == ERROR_SUCCESS)
 				buildNumber = (uint32)atoi(buildNumberStr);
+			dwType = REG_DWORD;
+			dwSize = sizeof(ubr);
+			if (RegQueryValueExA(hKey, "UBR", NULL, &dwType, (LPBYTE)&ubr, &dwSize) == ERROR_SUCCESS && dwType == REG_DWORD)
+				hasUBR = true;
 			dwType = REG_SZ;
 			dwSize = sizeof(featureVersion);
 			if (RegQueryValueExA(hKey, "DisplayVersion", NULL, &dwType, (LPBYTE)featureVersion, &dwSize) != ERROR_SUCCESS)
@@ -526,6 +533,7 @@ namespace CafeSystem
 			}
 			RegCloseKey(hKey);
 		}
+		buildString = hasUBR ? fmt::format("{}.{}", buildNumber, ubr) : fmt::format("{}", buildNumber);
 		std::string result(productName);
 		// ProductName still reads as "Windows 10" on Windows 11. Find and replace with "Windows 11" based on build number.
 		if (buildNumber >= 22000)
@@ -546,8 +554,9 @@ namespace CafeSystem
 		const char* platform = NULL;
 		#if BOOST_OS_WINDOWS
 		uint32 buildNumber;
-		std::string windowsVersionName = GetWindowsNamedVersion(buildNumber);
-		buffer = fmt::format("{} (Build {})", windowsVersionName, buildNumber);
+		std::string buildString;
+		std::string windowsVersionName = GetWindowsNamedVersion(buildNumber, buildString);
+		buffer = fmt::format("{} (Build {})", windowsVersionName, buildString);
 		platform = buffer.c_str();
 		#elif BOOST_OS_LINUX
 		if (getenv ("APPIMAGE"))

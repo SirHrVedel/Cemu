@@ -210,10 +210,33 @@ namespace nn_ac
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
+	// Close drops the connection of the calling application only (the IOSU tracks connections per client, not with a shared reference count).
+	// Closing while not connected is a successful no-op
 	nnResult Close()
 	{
 		s_applicationConnected = false;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	}
+
+	nnResult CloseAll()
+	{
+		return Close();
+	}
+
+	nnResult GetCloseStatus(betype<AC_STATUS>* status)
+	{
+		// the disconnect completes immediately, so a close is never pending
+		if (status)
+			*status = AC_STATUS::OK;
+		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	}
+
+	nnResult GetCloseResult(uint32be* closeResult)
+	{
+		const uint32 nnResultCode = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+		if (closeResult)
+			*closeResult = nnResultCode;
+		return nnResultCode;
 	}
 
 	nnResult IsApplicationConnected(uint8be* connected)
@@ -308,6 +331,9 @@ namespace nn_ac
 		cafeExportRegisterFunc(Connect, "nn_ac", "Connect__Q2_2nn2acFv", LogType::Placeholder);
 		cafeExportRegisterFunc(ConnectAsync, "nn_ac", "ConnectAsync__Q2_2nn2acFv", LogType::Placeholder);
 		cafeExportRegisterFunc(Close, "nn_ac", "Close__Q2_2nn2acFv", LogType::Placeholder);
+		cafeExportRegisterFunc(CloseAll, "nn_ac", "CloseAll__Q2_2nn2acFv", LogType::Placeholder);
+		cafeExportRegisterFunc(GetCloseStatus, "nn_ac", "GetCloseStatus__Q2_2nn2acFPQ3_2nn2ac6Status", LogType::Placeholder);
+		cafeExportRegisterFunc(GetCloseResult, "nn_ac", "GetCloseResult__Q2_2nn2acFPQ2_2nn6Result", LogType::Placeholder);
 
 		cafeExportRegisterFunc(GetConnectResult, "nn_ac", "GetConnectResult__Q2_2nn2acFPQ2_2nn6Result", LogType::Placeholder);
 		cafeExportRegisterFunc(GetLastErrorCode, "nn_ac", "GetLastErrorCode__Q2_2nn2acFPUi", LogType::Placeholder);

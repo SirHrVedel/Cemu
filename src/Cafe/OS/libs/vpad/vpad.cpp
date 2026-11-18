@@ -98,14 +98,6 @@ struct VPADCrossStickEmulationParams
 uint8 vpadButtonProcMode[VPAD_MAX_CONTROLLERS]; // TODO P: use
 uint32 vpadLcdMode[VPAD_MAX_CONTROLLERS];
 
-struct VPADTPCalibrationParam
-{ // TODO P: use
-	uint16be offsetX;
-	uint16be offsetY;
-	float32be scaleX;
-	float32be scaleY;
-} vpadTPCalibrationParam[VPAD_MAX_CONTROLLERS];
-
 void _tpRawToResolution(sint32 x, sint32 y, sint32* outX, sint32* outY, sint32 width, sint32 height)
 {
 	x -= 92;
@@ -337,10 +329,30 @@ namespace vpad
 		return result;
 	}
 
+	// Calibrated coordinates are computed as:
+	//   x = (rawX - offsetX) * scaleX
+	//   y = ((4095 - rawY) - offsetY) * scaleY     (raw Y axis is inverted, see _tpRawToResolution)
+	// This matches the defaults set in SetChannelDefaults (offset 92/254, scale 1280/3883 and 720/3694)
+	// Calc derives offset/scale from two (raw -> target) point pairs
 	sint32 VPADCalcTPCalibrationParam(VPADTPCalibrationParam* p, uint16 raw_x1, uint16 raw_y1, uint16 x1, uint16 y1, uint16 raw_x2, uint16 raw_y2, uint16 x2, uint16 y2)
 	{
-		cemu_assert_unimplemented();
-		return 1;
+		cemuLog_log(LogType::InputAPI, "VPADCalcTPCalibrationParam(0x{:x}, ({}, {}) -> ({}, {}), ({}, {}) -> ({}, {}))", MEMPTR(p).GetMPTR(), raw_x1, raw_y1, x1, y1, raw_x2, raw_y2, x2, y2);
+
+		if (raw_x1 == raw_x2 || raw_y1 == raw_y2 || x1 == x2 || y1 == y2)
+			return -1;
+
+		// Y is calibrated in the inverted raw space
+		const float inv_raw_y1 = (float)(4095 - (sint32)raw_y1);
+		const float inv_raw_y2 = (float)(4095 - (sint32)raw_y2);
+
+		const float scale_x = ((float)x2 - (float)x1) / ((float)raw_x2 - (float)raw_x1);
+		const float scale_y = ((float)y2 - (float)y1) / (inv_raw_y2 - inv_raw_y1);
+
+		p->scale_x = scale_x;
+		p->scale_y = scale_y;
+		p->x = (sint16)((float)raw_x1 - (float)x1 / scale_x);
+		p->y = (sint16)(inv_raw_y1 - (float)y1 / scale_y);
+		return 0;
 	}
 
 	void VPADGetTPCalibrationParam(sint32 channel, VPADTPCalibrationParam* param)
@@ -364,28 +376,17 @@ namespace vpad
 		cemuLog_log(LogType::InputAPI, "VPADGetTPCalibratedPoint({}, 0x{:x}, 0x{:x})", channel, MEMPTR(data).GetMPTR(), MEMPTR(raw).GetMPTR());
 		vpadbreak();
 
-		const auto& controller_data = g_vpad.controller_data[channel];
-		uint16 x = (uint16)((float)raw->x - ((float)controller_data.tp_calibration_param.x * controller_data.tp_calibration_param.scale_x));
-		uint16 y = (uint16)((float)raw->x - ((float)controller_data.tp_calibration_param.y * controller_data.tp_calibration_param.scale_y));
+		const auto& param = g_vpad.controller_data[channel].tp_calibration_param;
 
-		const int tp_size = (int)controller_data.tp_size;
+		const float fx = ((float)(uint16)raw->x - (float)(sint16)param.x) * (float)param.scale_x;
+		const float fy = ((float)(4095 - (sint32)(uint16)raw->y) - (float)(sint16)param.y) * (float)param.scale_y;
 
-		int tmpx = x;
-		if(x <= (int)controller_data.tp_size)
-			tmpx = (int)controller_data.tp_size;
+		// no upper clamp here, the target space is defined by the game via the calibration param (e.g. 1920x1080)
+		const sint32 x = std::clamp((sint32)fx, 0, 0xFFFF);
+		const sint32 y = std::clamp((sint32)fy, 0, 0xFFFF);
 
-		int tmpy = y;
-		if(y <= (int)controller_data.tp_size)
-			tmpy = (int)controller_data.tp_size;
-
-		if((0x500 - tp_size) <= tmpx)
-			x = (0x500 - tp_size);
-
-		if((0x2d0 - tp_size) <= tmpy)
-			y = (0x2d0 - tp_size);
-
-		data->x = x;
-		data->y = y;
+		data->x = (uint16)x;
+		data->y = (uint16)y;
 		data->touch = raw->touch;
 		data->valid = raw->valid;
 	}
@@ -897,70 +898,7 @@ void vpadExport_VPADStopMotor(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
-void vpadExport_VPADSetTPCalibrationParam(PPCInterpreter_t* hCPU)
-{
-	ppcDefineParamU32(channel, 0);
-	ppcDefineParamMEMPTR(params, VPADTPCalibrationParam, 1);
-
-	debugBreakpoint();
-	if (channel < VPAD_MAX_CONTROLLERS)
-	{
-		VPADTPCalibrationParam* calibrationParam = params.GetPtr();
-
-		cemuLog_log(LogType::InputAPI, "VPADSetTPCalibrationParam({}, {}, {}, {}, {})", channel, (uint16)calibrationParam->offsetX, (uint16)calibrationParam->offsetX, (float)calibrationParam->scaleX, (float)calibrationParam->scaleY);
-
-		vpadTPCalibrationParam[channel].offsetX = calibrationParam->offsetX;
-		vpadTPCalibrationParam[channel].offsetX = calibrationParam->offsetY;
-		vpadTPCalibrationParam[channel].scaleX = calibrationParam->scaleX;
-		vpadTPCalibrationParam[channel].scaleY = calibrationParam->scaleY;
-	}
-	else
-	{
-		debugBreakpoint();
-	}
-
-	osLib_returnFromFunction(hCPU, 0);
-}
-
-void vpadExport_VPADGetTPCalibrationParam(PPCInterpreter_t* hCPU)
-{
-	ppcDefineParamU32(channel, 0);
-	ppcDefineParamStructPtr(calibrationParam, VPADTPCalibrationParam, 1);
-	cemuLog_log(LogType::InputAPI, "VPADSetTPCalibrationParam({})", channel);
-
-	calibrationParam->offsetX = vpadTPCalibrationParam[channel].offsetX;
-	calibrationParam->offsetY = vpadTPCalibrationParam[channel].offsetY;
-	calibrationParam->scaleX = vpadTPCalibrationParam[channel].scaleX;
-	calibrationParam->scaleY = vpadTPCalibrationParam[channel].scaleY;
-
-	osLib_returnFromFunction(hCPU, 0);
-}
-
-void vpadExport_VPADGetTPCalibratedPoint(PPCInterpreter_t* hCPU)
-{
-	ppcDefineParamU32(channel, 0);
-	ppcDefineParamStructPtr(outputDisplay, VPADTPData_t, 1);
-	ppcDefineParamStructPtr(inputRaw, VPADTPData_t, 2);
-	cemuLog_log(LogType::InputAPI, "VPADGetTPCalibratedPoint({})", channel);
-
-	memmove(outputDisplay, inputRaw, sizeof(VPADTPData_t));
-
-	// vpadTPCalibrationParam[channel]
-
-	sint16 x = outputDisplay->x;
-	sint16 y = outputDisplay->y;
-
-	sint32 outputX;
-	sint32 outputY;
-	_tpRawToResolution(x, y, &outputX, &outputY, 1280, 720);
-
-	outputDisplay->x = outputX;
-	outputDisplay->y = outputY;
-	outputDisplay->touch = inputRaw->touch;
-	outputDisplay->validity = inputRaw->validity;
-
-	osLib_returnFromFunction(hCPU, 0);
-}
+// VPADGet/SetTPCalibrationParam, VPADGetTPCalibratedPoint and VPADCalcTPCalibrationParam are implemented in namespace vpad
 
 void vpadExport_VPADGetTPCalibratedPointEx(PPCInterpreter_t* hCPU)
 {
@@ -1165,7 +1103,7 @@ namespace vpad
 		vpadCrossStickEmulationParams[channel] = {};
 		vpadButtonProcMode[channel] = VPAD_BUTTON_PROC_MODE_TIGHT;
 		vpadLcdMode[channel] = VPAD_LCD_MODE_ON;
-		vpadTPCalibrationParam[channel] = {92, 254, (1280.0f / 3883.0f), (720.0f / 3694.0f)};
+		g_vpad.controller_data[channel].tp_calibration_param = {92, 254, (1280.0f / 3883.0f), (720.0f / 3694.0f)};
 	}
 
 	class : public COSModule
@@ -1230,9 +1168,10 @@ namespace vpad
 			osLib_addFunction("vpad", "VPADControlMotor", vpadExport_VPADControlMotor);
 			osLib_addFunction("vpad", "VPADStopMotor", vpadExport_VPADStopMotor);
 
-			osLib_addFunction("vpad", "VPADGetTPCalibrationParam", vpadExport_VPADGetTPCalibrationParam);
-			osLib_addFunction("vpad", "VPADSetTPCalibrationParam", vpadExport_VPADSetTPCalibrationParam);
-			osLib_addFunction("vpad", "VPADGetTPCalibratedPoint", vpadExport_VPADGetTPCalibratedPoint);
+			cafeExportRegister("vpad", VPADCalcTPCalibrationParam, LogType::InputAPI);
+			cafeExportRegister("vpad", VPADGetTPCalibrationParam, LogType::InputAPI);
+			cafeExportRegister("vpad", VPADSetTPCalibrationParam, LogType::InputAPI);
+			cafeExportRegister("vpad", VPADGetTPCalibratedPoint, LogType::InputAPI);
 			osLib_addFunction("vpad", "VPADGetTPCalibratedPointEx", vpadExport_VPADGetTPCalibratedPointEx);
 
 			//osLib_addFunction("vpad", "VPADRead", vpadExport_VPADRead);
